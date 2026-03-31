@@ -6,6 +6,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+
 @Slf4j
 @Service
 public class GiteaApiClient {
@@ -13,6 +16,7 @@ public class GiteaApiClient {
     private final RestClient giteaRestClient;
     private final String giteaUrl;
     private final String defaultGiteaToken;
+    private final ConcurrentMap<String, RestClient> clientCache = new ConcurrentHashMap<>();
 
     public GiteaApiClient(@Qualifier("giteaRestClient") RestClient giteaRestClient,
                            @Value("${gitea.url}") String giteaUrl,
@@ -43,11 +47,12 @@ public class GiteaApiClient {
 
     private RestClient getClient(String tokenOverride) {
         if (tokenOverride != null && !tokenOverride.isBlank()) {
-            return RestClient.builder()
-                    .baseUrl(giteaUrl)
-                    .defaultHeader("Authorization", "token " + tokenOverride)
-                    .defaultHeader("Accept", "application/json")
-                    .build();
+            return clientCache.computeIfAbsent(tokenOverride, token ->
+                    RestClient.builder()
+                            .baseUrl(giteaUrl)
+                            .defaultHeader("Authorization", "token " + token)
+                            .defaultHeader("Accept", "application/json")
+                            .build());
         }
         return giteaRestClient;
     }
