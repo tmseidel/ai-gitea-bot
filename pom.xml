@@ -13,7 +13,7 @@
 
     <groupId>org.remus</groupId>
     <artifactId>anthropic-gitea-bot</artifactId>
-    <version>0.1.0</version>
+    <version>0.1.1</version>
     <name>Anthropic Gitea Bot</name>
     <description>A bot that integrates a Gitea instance with the Anthropic API for automated PR code reviews</description>
 
