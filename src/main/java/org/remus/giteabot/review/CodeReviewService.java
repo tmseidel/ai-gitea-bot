@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.remus.giteabot.anthropic.AnthropicClient;
 import org.remus.giteabot.gitea.GiteaApiClient;
 import org.remus.giteabot.gitea.model.WebhookPayload;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -18,6 +19,7 @@ public class CodeReviewService {
         this.anthropicClient = anthropicClient;
     }
 
+    @Async
     public void reviewPullRequest(WebhookPayload payload) {
         String owner = payload.getRepository().getOwner().getLogin();
         String repo = payload.getRepository().getName();
@@ -27,18 +29,22 @@ public class CodeReviewService {
 
         log.info("Starting code review for PR #{} '{}' in {}/{}", prNumber, prTitle, owner, repo);
 
-        String diff = giteaApiClient.getPullRequestDiff(owner, repo, prNumber);
-        if (diff == null || diff.isBlank()) {
-            log.warn("No diff found for PR #{} in {}/{}", prNumber, owner, repo);
-            return;
+        try {
+            String diff = giteaApiClient.getPullRequestDiff(owner, repo, prNumber);
+            if (diff == null || diff.isBlank()) {
+                log.warn("No diff found for PR #{} in {}/{}", prNumber, owner, repo);
+                return;
+            }
+
+            String review = anthropicClient.reviewDiff(prTitle, prBody, diff);
+
+            String commentBody = formatReviewComment(review);
+            giteaApiClient.postReviewComment(owner, repo, prNumber, commentBody);
+
+            log.info("Code review completed for PR #{} in {}/{}", prNumber, owner, repo);
+        } catch (Exception e) {
+            log.error("Code review failed for PR #{} in {}/{}: {}", prNumber, owner, repo, e.getMessage(), e);
         }
-
-        String review = anthropicClient.reviewDiff(prTitle, prBody, diff);
-
-        String commentBody = formatReviewComment(review);
-        giteaApiClient.postReviewComment(owner, repo, prNumber, commentBody);
-
-        log.info("Code review completed for PR #{} in {}/{}", prNumber, owner, repo);
     }
 
     String formatReviewComment(String review) {
