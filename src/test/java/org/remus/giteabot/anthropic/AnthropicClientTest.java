@@ -1,17 +1,14 @@
 package org.remus.giteabot.anthropic;
 
 import org.junit.jupiter.api.Test;
-import org.remus.giteabot.anthropic.model.AnthropicResponse;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 class AnthropicClientTest {
@@ -126,7 +123,8 @@ class AnthropicClientTest {
 
             @Override
             String reviewSingleChunkInternal(String prTitle, String prBody, String diffChunk,
-                                             int chunkNumber, int totalChunks, boolean isRetry) {
+                                             int chunkNumber, int totalChunks, boolean isRetry,
+                                             String systemPrompt, String effectiveModel) {
                 callCount++;
                 if (callCount == 2) {
                     throw new RuntimeException("API error on chunk 2");
@@ -149,7 +147,8 @@ class AnthropicClientTest {
                 10, 4, 6) {
             @Override
             String reviewSingleChunkInternal(String prTitle, String prBody, String diffChunk,
-                                             int chunkNumber, int totalChunks, boolean isRetry) {
+                                             int chunkNumber, int totalChunks, boolean isRetry,
+                                             String systemPrompt, String effectiveModel) {
                 throw new RuntimeException("API error on chunk " + chunkNumber);
             }
         };
@@ -161,5 +160,43 @@ class AnthropicClientTest {
                 () -> client.reviewDiff("Test PR", "body", diff));
         assertTrue(ex.getMessage().contains("All"));
         assertTrue(ex.getMessage().contains("failed"));
+    }
+
+    @Test
+    void reviewDiff_withCustomSystemPromptAndModel() {
+        RestClient restClient = mock(RestClient.class);
+        AnthropicClient client = new AnthropicClient(restClient, "claude-sonnet-4-20250514", 1024,
+                5000, 4, 2000) {
+            @Override
+            String reviewSingleChunkInternal(String prTitle, String prBody, String diffChunk,
+                                             int chunkNumber, int totalChunks, boolean isRetry,
+                                             String systemPrompt, String effectiveModel) {
+                assertEquals("Custom prompt", systemPrompt);
+                assertEquals("custom-model", effectiveModel);
+                return "Review with custom prompt";
+            }
+        };
+
+        String result = client.reviewDiff("Title", "Body", "some diff", "Custom prompt", "custom-model");
+        assertTrue(result.contains("Review with custom prompt"));
+    }
+
+    @Test
+    void reviewDiff_withNullSystemPrompt_usesDefault() {
+        RestClient restClient = mock(RestClient.class);
+        AnthropicClient client = new AnthropicClient(restClient, "claude-sonnet-4-20250514", 1024,
+                5000, 4, 2000) {
+            @Override
+            String reviewSingleChunkInternal(String prTitle, String prBody, String diffChunk,
+                                             int chunkNumber, int totalChunks, boolean isRetry,
+                                             String systemPrompt, String effectiveModel) {
+                assertEquals(AnthropicClient.DEFAULT_SYSTEM_PROMPT, systemPrompt);
+                assertEquals("claude-sonnet-4-20250514", effectiveModel);
+                return "Review with default prompt";
+            }
+        };
+
+        String result = client.reviewDiff("Title", "Body", "some diff", null, null);
+        assertTrue(result.contains("Review with default prompt"));
     }
 }

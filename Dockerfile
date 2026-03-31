@@ -16,10 +16,11 @@ FROM eclipse-temurin:21-jre-alpine
 
 RUN apk add --no-cache ca-certificates curl && \
     addgroup -g 1000 appgroup && adduser -u 1000 -G appgroup -D appuser && \
-    mkdir -p /app && chown -R appuser:appgroup /app
+    mkdir -p /app /app/prompts && chown -R appuser:appgroup /app
 
 WORKDIR /app
 COPY --from=build --chown=appuser:appgroup /app/target/*.jar app.jar
+COPY --chown=appuser:appgroup prompts/ /app/prompts/
 
 USER appuser
 

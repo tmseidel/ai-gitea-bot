@@ -12,6 +12,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -39,7 +41,7 @@ class GiteaWebhookControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string("review triggered"));
 
-        verify(codeReviewService).reviewPullRequest(any(WebhookPayload.class));
+        verify(codeReviewService).reviewPullRequest(any(WebhookPayload.class), isNull());
     }
 
     @Test
@@ -52,7 +54,7 @@ class GiteaWebhookControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string("review triggered"));
 
-        verify(codeReviewService).reviewPullRequest(any(WebhookPayload.class));
+        verify(codeReviewService).reviewPullRequest(any(WebhookPayload.class), isNull());
     }
 
     @Test
@@ -65,7 +67,7 @@ class GiteaWebhookControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string("ignored"));
 
-        verify(codeReviewService, never()).reviewPullRequest(any());
+        verify(codeReviewService, never()).reviewPullRequest(any(), any());
     }
 
     @Test
@@ -79,7 +81,21 @@ class GiteaWebhookControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string("ignored"));
 
-        verify(codeReviewService, never()).reviewPullRequest(any());
+        verify(codeReviewService, never()).reviewPullRequest(any(), any());
+    }
+
+    @Test
+    void handleWebhook_withPromptParam_passesPromptName() throws Exception {
+        WebhookPayload payload = createTestPayload("opened");
+
+        mockMvc.perform(post("/api/webhook")
+                        .param("prompt", "security")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload)))
+                .andExpect(status().isOk())
+                .andExpect(content().string("review triggered"));
+
+        verify(codeReviewService).reviewPullRequest(any(WebhookPayload.class), eq("security"));
     }
 
     private WebhookPayload createTestPayload(String action) {

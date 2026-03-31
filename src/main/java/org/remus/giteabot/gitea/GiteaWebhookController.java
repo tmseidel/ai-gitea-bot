@@ -18,7 +18,8 @@ public class GiteaWebhookController {
     }
 
     @PostMapping
-    public ResponseEntity<String> handleWebhook(@RequestBody WebhookPayload payload) {
+    public ResponseEntity<String> handleWebhook(@RequestBody WebhookPayload payload,
+                                                @RequestParam(name = "prompt", required = false) String promptName) {
         if (payload.getPullRequest() == null) {
             log.debug("Ignoring non-PR webhook event");
             return ResponseEntity.ok("ignored");
@@ -30,12 +31,13 @@ public class GiteaWebhookController {
             return ResponseEntity.ok("ignored");
         }
 
-        log.info("Received PR webhook: action={}, PR #{} in {}",
+        log.info("Received PR webhook: action={}, PR #{} in {}, prompt={}",
                 action,
                 payload.getPullRequest().getNumber(),
-                payload.getRepository().getFullName());
+                payload.getRepository().getFullName(),
+                promptName);
 
-        codeReviewService.reviewPullRequest(payload);
+        codeReviewService.reviewPullRequest(payload, promptName);
 
         return ResponseEntity.ok("review triggered");
     }
