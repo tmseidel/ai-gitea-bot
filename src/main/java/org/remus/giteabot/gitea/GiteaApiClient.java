@@ -45,6 +45,25 @@ public class GiteaApiClient {
         log.info("Review comment posted successfully");
     }
 
+    public void postComment(String owner, String repo, Long issueNumber, String body, String tokenOverride) {
+        log.info("Posting comment on issue/PR #{} in {}/{}", issueNumber, owner, repo);
+        getClient(tokenOverride).post()
+                .uri("/api/v1/repos/{owner}/{repo}/issues/{index}/comments", owner, repo, issueNumber)
+                .body(new CommentRequest(body))
+                .retrieve()
+                .toBodilessEntity();
+        log.info("Comment posted successfully");
+    }
+
+    public void addReaction(String owner, String repo, Long commentId, String reaction, String tokenOverride) {
+        log.info("Adding '{}' reaction to comment #{} in {}/{}", reaction, commentId, owner, repo);
+        getClient(tokenOverride).post()
+                .uri("/api/v1/repos/{owner}/{repo}/issues/comments/{id}/reactions", owner, repo, commentId)
+                .body(new ReactionRequest(reaction))
+                .retrieve()
+                .toBodilessEntity();
+    }
+
     private RestClient getClient(String tokenOverride) {
         if (tokenOverride != null && !tokenOverride.isBlank()) {
             return clientCache.computeIfAbsent(tokenOverride, token ->
@@ -58,4 +77,6 @@ public class GiteaApiClient {
     }
 
     record ReviewRequest(String body, String event) {}
+    record CommentRequest(String body) {}
+    record ReactionRequest(String content) {}
 }

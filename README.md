@@ -5,6 +5,8 @@ A bot that integrates a Gitea instance with the Anthropic API to provide automat
 ## Features
 
 - **Automated PR Code Reviews** — receives Gitea webhooks when PRs are opened or updated and posts AI-generated reviews
+- **Agentic Session Management** — maintains conversation sessions per PR, persisted in a database, enabling context-aware follow-up reviews
+- **Interactive Bot Commands** — mention the bot (e.g., `@claude_bot`) in PR comments to ask questions or request additional analysis; the bot reacts with 👀 and responds in context
 - **Configurable System Prompts** — define multiple review profiles via markdown files, selectable per webhook
 - **Per-Prompt Overrides** — each prompt definition can override the Claude model and Gitea API token
 - **Smart Diff Chunking** — automatically splits large diffs into reviewable chunks with retry on token limits
@@ -23,10 +25,12 @@ export ANTHROPIC_API_KEY=your-anthropic-api-key
 docker compose up --build -d
 ```
 
+This starts the bot along with a PostgreSQL database for session persistence.
+
 ### Local Development
 
 ```bash
-mvn spring-boot:run       # Start the application
+mvn spring-boot:run       # Start the application (uses H2 in-memory database)
 mvn test                  # Run tests
 mvn clean package         # Build jar
 ```
@@ -48,6 +52,22 @@ Requires Java 21+.
 | `anthropic.max-diff-chars-per-chunk` | `ANTHROPIC_MAX_DIFF_CHARS_PER_CHUNK` | `120000` | Max characters per diff chunk |
 | `anthropic.max-diff-chunks` | `ANTHROPIC_MAX_DIFF_CHUNKS` | `8` | Maximum number of diff chunks to review |
 | `anthropic.retry-truncated-chunk-chars` | `ANTHROPIC_RETRY_TRUNCATED_CHUNK_CHARS` | `60000` | Truncated chunk size on retry |
+
+### Bot Settings
+
+| Property | Environment Variable | Default | Description |
+|---|---|---|---|
+| `bot.alias` | `BOT_ALIAS` | `@claude_bot` | The mention alias the bot responds to in PR comments |
+
+### Database Settings
+
+The bot uses a database to persist review sessions and conversation history. In Docker, a PostgreSQL database is provided. For local development, an H2 in-memory database is used by default.
+
+| Property | Environment Variable | Default | Description |
+|---|---|---|---|
+| `spring.datasource.url` | `DATABASE_URL` | `jdbc:h2:mem:giteabot` (local) / `jdbc:postgresql://db:5432/giteabot` (Docker) | Database JDBC URL |
+| `spring.datasource.username` | `DATABASE_USERNAME` | `sa` (local) / `giteabot` (Docker) | Database username |
+| `spring.datasource.password` | `DATABASE_PASSWORD` | — | Database password |
 
 ### Configurable Prompts
 
@@ -89,10 +109,30 @@ volumes:
 1. In your Gitea repository, go to **Settings → Webhooks → Add Webhook → Gitea**
 2. Set the **Target URL** to `http://<bot-host>:8080/api/webhook`
 3. To use a specific prompt profile, append the query parameter: `http://<bot-host>:8080/api/webhook?prompt=security`
-4. Select **Pull Request Events**
+4. Select **Pull Request Events** and **Issue Comment** events
 5. Save the webhook
 
-The bot will automatically review PRs when they are opened or updated. Omitting the `?prompt=` parameter uses the `default` definition, falling back to a built-in hardcoded prompt if no default file is configured.
+The bot will automatically:
+- **Review PRs** when they are opened or updated, maintaining a conversation session per PR
+- **Respond to commands** when mentioned (e.g., `@claude_bot explain the auth changes`) in PR comments
+- **Clean up sessions** when PRs are closed or merged
+
+### Bot Commands
+
+Mention the bot alias in any PR comment to interact with it:
+
+```
+@claude_bot please explain the authentication changes
+@claude_bot are there any security concerns with this approach?
+@claude_bot suggest improvements for the error handling
+```
+
+The bot will:
+1. React with 👀 to acknowledge the comment
+2. Use the existing conversation context from the PR session
+3. Post a response as a new comment on the PR
+
+The bot alias is configurable via the `BOT_ALIAS` environment variable (default: `@claude_bot`).
 
 ## Architecture
 

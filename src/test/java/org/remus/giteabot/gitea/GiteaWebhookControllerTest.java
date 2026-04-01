@@ -2,6 +2,7 @@ package org.remus.giteabot.gitea;
 
 import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.remus.giteabot.config.BotConfigProperties;
 import org.remus.giteabot.gitea.model.WebhookPayload;
 import org.remus.giteabot.review.CodeReviewService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,6 +28,9 @@ class GiteaWebhookControllerTest {
 
     @MockitoBean
     private CodeReviewService codeReviewService;
+
+    @MockitoBean
+    private BotConfigProperties botConfigProperties;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -58,16 +62,16 @@ class GiteaWebhookControllerTest {
     }
 
     @Test
-    void handleWebhook_prClosed_ignored() throws Exception {
+    void handleWebhook_prClosed_closesSession() throws Exception {
         WebhookPayload payload = createTestPayload("closed");
 
         mockMvc.perform(post("/api/webhook")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(payload)))
                 .andExpect(status().isOk())
-                .andExpect(content().string("ignored"));
+                .andExpect(content().string("session closed"));
 
-        verify(codeReviewService, never()).reviewPullRequest(any(), any());
+        verify(codeReviewService).handlePrClosed(any(WebhookPayload.class));
     }
 
     @Test
@@ -96,6 +100,107 @@ class GiteaWebhookControllerTest {
                 .andExpect(content().string("review triggered"));
 
         verify(codeReviewService).reviewPullRequest(any(WebhookPayload.class), eq("security"));
+    }
+
+    @Test
+    void handleWebhook_commentWithBotMention_triggersCommand() throws Exception {
+        when(botConfigProperties.getAlias()).thenReturn("@claude_bot");
+
+        String payload = """
+                {
+                    "action": "created",
+                    "comment": {
+                        "id": 42,
+                        "body": "@claude_bot please explain this code",
+                        "user": {"login": "testuser"}
+                    },
+                    "issue": {
+                        "number": 1,
+                        "title": "Test PR",
+                        "pull_request": {}
+                    },
+                    "repository": {
+                        "name": "testrepo",
+                        "full_name": "testowner/testrepo",
+                        "owner": {"login": "testowner"}
+                    }
+                }
+                """;
+
+        mockMvc.perform(post("/api/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk())
+                .andExpect(content().string("command received"));
+
+        verify(codeReviewService).handleBotCommand(any(WebhookPayload.class), isNull());
+    }
+
+    @Test
+    void handleWebhook_commentWithoutBotMention_ignored() throws Exception {
+        when(botConfigProperties.getAlias()).thenReturn("@claude_bot");
+
+        String payload = """
+                {
+                    "action": "created",
+                    "comment": {
+                        "id": 42,
+                        "body": "just a regular comment",
+                        "user": {"login": "testuser"}
+                    },
+                    "issue": {
+                        "number": 1,
+                        "title": "Test PR",
+                        "pull_request": {}
+                    },
+                    "repository": {
+                        "name": "testrepo",
+                        "full_name": "testowner/testrepo",
+                        "owner": {"login": "testowner"}
+                    }
+                }
+                """;
+
+        mockMvc.perform(post("/api/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk())
+                .andExpect(content().string("ignored"));
+
+        verify(codeReviewService, never()).handleBotCommand(any(), any());
+    }
+
+    @Test
+    void handleWebhook_commentOnNonPrIssue_ignored() throws Exception {
+        when(botConfigProperties.getAlias()).thenReturn("@claude_bot");
+
+        String payload = """
+                {
+                    "action": "created",
+                    "comment": {
+                        "id": 42,
+                        "body": "@claude_bot help",
+                        "user": {"login": "testuser"}
+                    },
+                    "issue": {
+                        "number": 1,
+                        "title": "Not a PR"
+                    },
+                    "repository": {
+                        "name": "testrepo",
+                        "full_name": "testowner/testrepo",
+                        "owner": {"login": "testowner"}
+                    }
+                }
+                """;
+
+        mockMvc.perform(post("/api/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk())
+                .andExpect(content().string("ignored"));
+
+        verify(codeReviewService, never()).handleBotCommand(any(), any());
     }
 
     private WebhookPayload createTestPayload(String action) {

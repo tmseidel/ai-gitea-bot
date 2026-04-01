@@ -57,6 +57,55 @@ public class AnthropicClient {
         return reviewDiff(prTitle, prBody, diff, null, null);
     }
 
+    /**
+     * Sends a multi-turn conversation to the Anthropic API and returns the assistant's response.
+     * The conversation history is sent in full so the model has context from previous interactions.
+     */
+    public String chat(List<AnthropicRequest.Message> conversationHistory, String newUserMessage,
+                       String systemPrompt, String modelOverride) {
+        String effectiveModel = (modelOverride != null && !modelOverride.isBlank()) ? modelOverride : model;
+        String effectivePrompt = (systemPrompt != null && !systemPrompt.isBlank()) ? systemPrompt : DEFAULT_SYSTEM_PROMPT;
+
+        log.info("Sending chat message to Anthropic model={}, conversation size={}", effectiveModel, conversationHistory.size());
+
+        List<AnthropicRequest.Message> messages = new ArrayList<>(conversationHistory);
+        messages.add(AnthropicRequest.Message.builder()
+                .role("user")
+                .content(newUserMessage)
+                .build());
+
+        AnthropicRequest request = AnthropicRequest.builder()
+                .model(effectiveModel)
+                .maxTokens(maxTokens)
+                .system(effectivePrompt)
+                .messages(messages)
+                .build();
+
+        AnthropicResponse response = anthropicRestClient.post()
+                .uri("/v1/messages")
+                .body(request)
+                .retrieve()
+                .body(AnthropicResponse.class);
+
+        if (response == null || response.getContent() == null || response.getContent().isEmpty()) {
+            log.warn("Empty response from Anthropic API");
+            return "Unable to generate response - empty response from AI.";
+        }
+
+        String result = response.getContent().stream()
+                .filter(block -> "text".equals(block.getType()))
+                .map(AnthropicResponse.ContentBlock::getText)
+                .reduce("", (a, b) -> a + b);
+
+        if (response.getUsage() != null) {
+            log.info("Chat response received: {} input tokens, {} output tokens",
+                    response.getUsage().getInputTokens(),
+                    response.getUsage().getOutputTokens());
+        }
+
+        return result;
+    }
+
     public String reviewDiff(String prTitle, String prBody, String diff, String systemPrompt, String modelOverride) {
         String effectiveModel = (modelOverride != null && !modelOverride.isBlank()) ? modelOverride : model;
         String effectivePrompt = (systemPrompt != null && !systemPrompt.isBlank()) ? systemPrompt : DEFAULT_SYSTEM_PROMPT;

@@ -219,7 +219,7 @@ class WebhookIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(webhookPayload))
                 .andExpect(status().isOk())
-                .andExpect(content().string("ignored"));
+                .andExpect(content().string("session closed"));
     }
 
     @Test
