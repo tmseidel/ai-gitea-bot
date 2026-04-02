@@ -18,8 +18,21 @@ import org.remus.giteabot.session.SessionService;
 
 import java.util.List;
 
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class CodeReviewServiceTest {
@@ -166,17 +179,17 @@ class CodeReviewServiceTest {
     @Test
     void formatReviewComment_containsHeader() {
         String result = codeReviewService.formatReviewComment("some review text");
-        assert result.contains("🤖 AI Code Review");
-        assert result.contains("some review text");
-        assert result.contains("Automated review by Anthropic Gitea Bot");
+        assertTrue(result.contains("🤖 AI Code Review"));
+        assertTrue(result.contains("some review text"));
+        assertTrue(result.contains("Automated review by Anthropic Gitea Bot"));
     }
 
     @Test
     void formatBotResponse_containsHeader() {
         String result = codeReviewService.formatBotResponse("some response");
-        assert result.contains("🤖 Bot Response");
-        assert result.contains("some response");
-        assert result.contains("Response by Anthropic Gitea Bot");
+        assertTrue(result.contains("🤖 Bot Response"));
+        assertTrue(result.contains("some response"));
+        assertTrue(result.contains("Response by Anthropic Gitea Bot"));
     }
 
     @Test
@@ -242,25 +255,25 @@ class CodeReviewServiceTest {
     void buildInlineCommentContext_includesFileAndDiffHunk() {
         String result = codeReviewService.buildInlineCommentContext(
                 "src/Main.java", "@@ -1,5 +1,5 @@\n code", "@claude_bot explain this");
-        assert result.contains("src/Main.java");
-        assert result.contains("@@ -1,5 +1,5 @@");
-        assert result.contains("@claude_bot explain this");
+        assertTrue(result.contains("src/Main.java"));
+        assertTrue(result.contains("@@ -1,5 +1,5 @@"));
+        assertTrue(result.contains("@claude_bot explain this"));
     }
 
     @Test
     void buildInlineCommentContext_withoutDiffHunk() {
         String result = codeReviewService.buildInlineCommentContext(
                 "src/Main.java", null, "@claude_bot what is this?");
-        assert result.contains("src/Main.java");
-        assert !result.contains("diff hunk");
-        assert result.contains("@claude_bot what is this?");
+        assertTrue(result.contains("src/Main.java"));
+        assertFalse(result.contains("diff hunk"));
+        assertTrue(result.contains("@claude_bot what is this?"));
     }
 
     @Test
     void resolvePrNumber_fromIssue() {
         WebhookPayload payload = createCommentPayload("test");
         Long result = codeReviewService.resolvePrNumber(payload);
-        assert result.equals(1L);
+        assertEquals(1L, result);
     }
 
     @Test
@@ -270,7 +283,7 @@ class CodeReviewServiceTest {
         pr.setNumber(5L);
         payload.setPullRequest(pr);
         Long result = codeReviewService.resolvePrNumber(payload);
-        assert result.equals(5L);
+        assertEquals(5L, result);
     }
 
     @Test
