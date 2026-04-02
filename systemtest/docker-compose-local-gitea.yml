@@ -1,0 +1,24 @@
+
+services:
+  server:
+    image: docker.gitea.com/gitea:1.25.5
+    container_name: gitea
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+      - GITEA__webhook__ALLOWED_HOST_LIST=*
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: always
+    networks:
+      - gitea
+    volumes:
+      - ./gitea:/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - "3000:3000"
+      - "222:22"
+networks:
+  gitea:
+    driver: bridge

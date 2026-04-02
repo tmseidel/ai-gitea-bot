@@ -1,5 +1,6 @@
 target/
 .git/
+.github/
 .idea/
 *.iml
 .vscode/
@@ -9,5 +10,10 @@ target/
 .dockerignore
 docker-compose*.yml
 Dockerfile
+doc/
+systemtest/
 README.md
+ARCHITECTURE.md
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
 LICENSE

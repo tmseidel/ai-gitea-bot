@@ -17,7 +17,7 @@ import java.util.Locale;
 @Service
 public class AnthropicClient {
 
-    private static final String SYSTEM_PROMPT = """
+    static final String DEFAULT_SYSTEM_PROMPT = """
             You are an experienced software engineer performing a code review.
             Analyze the provided pull request diff and provide a constructive review.
             Focus on:
@@ -54,7 +54,63 @@ public class AnthropicClient {
     }
 
     public String reviewDiff(String prTitle, String prBody, String diff) {
-        log.info("Requesting code review from Anthropic model={}", model);
+        return reviewDiff(prTitle, prBody, diff, null, null);
+    }
+
+    /**
+     * Sends a multi-turn conversation to the Anthropic API and returns the assistant's response.
+     * The conversation history is sent in full so the model has context from previous interactions.
+     */
+    public String chat(List<AnthropicRequest.Message> conversationHistory, String newUserMessage,
+                       String systemPrompt, String modelOverride) {
+        String effectiveModel = (modelOverride != null && !modelOverride.isBlank()) ? modelOverride : model;
+        String effectivePrompt = (systemPrompt != null && !systemPrompt.isBlank()) ? systemPrompt : DEFAULT_SYSTEM_PROMPT;
+
+        log.info("Sending chat message to Anthropic model={}, conversation size={}", effectiveModel, conversationHistory.size());
+
+        List<AnthropicRequest.Message> messages = new ArrayList<>(conversationHistory);
+        messages.add(AnthropicRequest.Message.builder()
+                .role("user")
+                .content(newUserMessage)
+                .build());
+
+        AnthropicRequest request = AnthropicRequest.builder()
+                .model(effectiveModel)
+                .maxTokens(maxTokens)
+                .system(effectivePrompt)
+                .messages(messages)
+                .build();
+
+        AnthropicResponse response = anthropicRestClient.post()
+                .uri("/v1/messages")
+                .body(request)
+                .retrieve()
+                .body(AnthropicResponse.class);
+
+        if (response == null || response.getContent() == null || response.getContent().isEmpty()) {
+            log.warn("Empty response from Anthropic API");
+            return "Unable to generate response - empty response from AI.";
+        }
+
+        String result = response.getContent().stream()
+                .filter(block -> "text".equals(block.getType()))
+                .map(AnthropicResponse.ContentBlock::getText)
+                .reduce("", (a, b) -> a + b);
+
+        if (response.getUsage() != null) {
+            log.info("Chat response received: {} input tokens, {} output tokens",
+                    response.getUsage().getInputTokens(),
+                    response.getUsage().getOutputTokens());
+        }
+
+        return result;
+    }
+
+    public String reviewDiff(String prTitle, String prBody, String diff, String systemPrompt, String modelOverride) {
+        String effectiveModel = (modelOverride != null && !modelOverride.isBlank()) ? modelOverride : model;
+        String effectivePrompt = (systemPrompt != null && !systemPrompt.isBlank()) ? systemPrompt : DEFAULT_SYSTEM_PROMPT;
+
+        log.info("Requesting code review from Anthropic model={}", effectiveModel);
         ChunkingResult chunkingResult = splitDiffIntoChunks(diff);
         List<String> reviews = new ArrayList<>();
         int failedChunks = 0;
@@ -66,7 +122,8 @@ public class AnthropicClient {
             int totalChunks = chunkingResult.chunks().size();
 
             try {
-                String review = reviewSingleChunk(prTitle, prBody, chunk, chunkNumber, totalChunks, false);
+                String review = reviewSingleChunk(prTitle, prBody, chunk, chunkNumber, totalChunks, false,
+                        effectivePrompt, effectiveModel);
 
                 if (totalChunks > 1) {
                     reviews.add("### Diff chunk " + chunkNumber + "/" + totalChunks + "\n" + review);
@@ -101,9 +158,10 @@ public class AnthropicClient {
     }
 
     private String reviewSingleChunk(String prTitle, String prBody, String diffChunk, int chunkNumber, int totalChunks,
-                                     boolean isRetry) {
+                                     boolean isRetry, String systemPrompt, String effectiveModel) {
         try {
-            return reviewSingleChunkInternal(prTitle, prBody, diffChunk, chunkNumber, totalChunks, isRetry);
+            return reviewSingleChunkInternal(prTitle, prBody, diffChunk, chunkNumber, totalChunks, isRetry,
+                    systemPrompt, effectiveModel);
         } catch (HttpClientErrorException.BadRequest e) {
             if (isPromptTooLongError(e) && !isRetry && diffChunk.length() > retryTruncatedChunkChars) {
                 log.warn("Prompt too long for chunk {}/{} (chars={}), retrying with truncated chunk (chars={})",
@@ -112,7 +170,8 @@ public class AnthropicClient {
                         diffChunk.length(),
                         retryTruncatedChunkChars);
                 String truncatedChunk = truncateDiff(diffChunk, retryTruncatedChunkChars);
-                return reviewSingleChunk(prTitle, prBody, truncatedChunk, chunkNumber, totalChunks, true);
+                return reviewSingleChunk(prTitle, prBody, truncatedChunk, chunkNumber, totalChunks, true,
+                        systemPrompt, effectiveModel);
             }
             throw e;
         }
@@ -123,13 +182,14 @@ public class AnthropicClient {
      * Package-private so it can be overridden in tests.
      */
     String reviewSingleChunkInternal(String prTitle, String prBody, String diffChunk,
-                                     int chunkNumber, int totalChunks, boolean isRetry) {
+                                     int chunkNumber, int totalChunks, boolean isRetry,
+                                     String systemPrompt, String effectiveModel) {
         String userMessage = buildUserMessage(prTitle, prBody, diffChunk, chunkNumber, totalChunks, isRetry);
 
         AnthropicRequest request = AnthropicRequest.builder()
-                .model(model)
+                .model(effectiveModel)
                 .maxTokens(maxTokens)
-                .system(SYSTEM_PROMPT)
+                .system(systemPrompt)
                 .messages(List.of(
                         AnthropicRequest.Message.builder()
                                 .role("user")

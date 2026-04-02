@@ -13,7 +13,7 @@
 
     <groupId>org.remus</groupId>
     <artifactId>anthropic-gitea-bot</artifactId>
-    <version>0.1.2</version>
+    <version>1.0.0</version>
     <name>Anthropic Gitea Bot</name>
     <description>A bot that integrates a Gitea instance with the Anthropic API for automated PR code reviews</description>
 
@@ -34,6 +34,27 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- Spring Data JPA -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+
+        <!-- PostgreSQL (production) -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>42.7.7</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- H2 (development and testing) -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
         </dependency>
 
         <!-- Lombok -->

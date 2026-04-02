@@ -39,3 +39,4 @@ target/
 # OS
 .DS_Store
 Thumbs.db
+/systemtest/gitea/
