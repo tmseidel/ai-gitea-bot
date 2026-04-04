@@ -33,7 +33,7 @@ public class OllamaClient extends AbstractAiClient {
         messages.add(OllamaRequest.Message.builder().role("system").content(systemPrompt).build());
         messages.add(OllamaRequest.Message.builder().role("user").content(userMessage).build());
 
-        return doRequest(effectiveModel, messages, "review");
+        return doRequest(effectiveModel, messages, maxTokens, "review");
     }
 
     @Override
@@ -49,7 +49,7 @@ public class OllamaClient extends AbstractAiClient {
                     .build());
         }
 
-        return doRequest(effectiveModel, messages, "chat");
+        return doRequest(effectiveModel, messages, maxTokens, "chat");
     }
 
     @Override
@@ -62,11 +62,14 @@ public class OllamaClient extends AbstractAiClient {
         return normalized.contains("too long") || normalized.contains("context length");
     }
 
-    private String doRequest(String model, List<OllamaRequest.Message> messages, String context) {
+    private String doRequest(String model, List<OllamaRequest.Message> messages, int maxTokens, String context) {
         OllamaRequest request = OllamaRequest.builder()
                 .model(model)
                 .messages(messages)
                 .stream(false)
+                .options(OllamaRequest.Options.builder()
+                        .numPredict(maxTokens)
+                        .build())
                 .build();
 
         OllamaResponse response = restClient.post()

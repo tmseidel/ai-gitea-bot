@@ -18,11 +18,8 @@ docker compose -f systemtest/docker-compose-ollama.yml up --build -d
 
 This starts:
 - **Ollama** on port `11434` with a small LLM (`llama3.2:1b` by default)
-- **Gitea** on port `3000` for local testing
-- **The bot** on port `8080`, configured to use Ollama
-- **PostgreSQL** for session persistence
 
-The `ollama-pull` service automatically downloads the configured model on first start.
+The `ollama-pull` service automatically downloads the configured model on first start. You can then run the bot separately with the main `docker-compose.yml`, setting `AI_PROVIDER=ollama`.
 
 ## Configuration
 
@@ -60,11 +57,21 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      test: ["CMD-SHELL", "ollama list || exit 1"]
       interval: 10s
       timeout: 5s
       start_period: 30s
       retries: 5
+    restart: unless-stopped
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    entrypoint: ["sh", "-c", "sleep 5 && ollama pull ${AI_MODEL:-llama3.2:1b}"]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
 
 volumes:
   ollama_data:

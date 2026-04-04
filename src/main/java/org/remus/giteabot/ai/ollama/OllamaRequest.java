@@ -15,10 +15,21 @@ public class OllamaRequest {
 
     private boolean stream;
 
+    private Options options;
+
     @Data
     @Builder
     public static class Message {
         private String role;
         private String content;
+    }
+
+    @Data
+    @Builder
+    public static class Options {
+        /**
+         * Maximum number of tokens to generate (num_predict in Ollama API).
+         */
+        private Integer numPredict;
     }
 }
