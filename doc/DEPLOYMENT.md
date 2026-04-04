@@ -1,22 +1,40 @@
 # Deployment
 
-This guide covers deploying the Anthropic Gitea Bot using Docker Compose.
+This guide covers deploying the AI Gitea Bot using Docker Compose.
 
 ## Prerequisites
 
 - **Docker** and **Docker Compose** installed
 - A **Gitea instance** with the bot user configured (see [Gitea Setup](GITEA_SETUP.md))
-- An **Anthropic API key** from [console.anthropic.com](https://console.anthropic.com)
+- An API key for your chosen AI provider (Anthropic, OpenAI) or a local Ollama instance
 
 ## Quick Start
+
+### With Anthropic (default)
 
 ```bash
 export GITEA_URL=https://your-gitea-instance.com
 export GITEA_TOKEN=your-gitea-api-token
-export ANTHROPIC_API_KEY=your-anthropic-api-key
+export AI_ANTHROPIC_API_KEY=your-anthropic-api-key
 
 docker compose up --build -d
 ```
+
+### With OpenAI
+
+```bash
+export GITEA_URL=https://your-gitea-instance.com
+export GITEA_TOKEN=your-gitea-api-token
+export AI_PROVIDER=openai
+export AI_MODEL=gpt-4o
+export AI_OPENAI_API_KEY=your-openai-api-key
+
+docker compose up --build -d
+```
+
+### With Ollama (local LLM)
+
+See [Using Ollama](OLLAMA.md) for a dedicated guide.
 
 This starts:
 - The bot application on port **8080**
@@ -29,17 +47,18 @@ Save the following as `docker-compose.yml` and adjust the values to your environ
 ```yaml
 services:
   app:
-    image: anthropic-gitea-bot:latest
+    image: ai-gitea-bot:latest
     ports:
       - "8080:8080"
     environment:
       SPRING_PROFILES_ACTIVE: docker
       GITEA_URL: https://your-gitea-instance.com
       GITEA_TOKEN: your-gitea-api-token
-      ANTHROPIC_API_KEY: your-anthropic-api-key
-      ANTHROPIC_MODEL: claude-sonnet-4-20250514
-      ANTHROPIC_MAX_TOKENS: 4096
-      BOT_ALIAS: "@claude_bot"
+      AI_PROVIDER: anthropic           # "anthropic", "openai", or "ollama"
+      AI_MODEL: claude-sonnet-4-20250514
+      AI_MAX_TOKENS: 4096
+      AI_ANTHROPIC_API_KEY: your-api-key
+      BOT_ALIAS: "@ai_bot"
       DATABASE_URL: jdbc:postgresql://db:5432/giteabot
       DATABASE_USERNAME: giteabot
       DATABASE_PASSWORD: change-me
@@ -69,7 +88,7 @@ volumes:
   pgdata:
 ```
 
-> **Note:** Replace `your-gitea-instance.com`, `your-gitea-api-token`, `your-anthropic-api-key`, and `change-me` with your actual values. For sensitive values, consider using a `.env` file or Docker secrets.
+> **Note:** Replace placeholders with your actual values. For sensitive values, consider using a `.env` file or Docker secrets.
 
 ## Environment Variables
 
@@ -79,24 +98,44 @@ volumes:
 |---|---|
 | `GITEA_URL` | URL of your Gitea instance (e.g., `https://gitea.example.com`) |
 | `GITEA_TOKEN` | API token for the bot's Gitea user account |
-| `ANTHROPIC_API_KEY` | Anthropic API key for Claude |
 
-### Optional — Anthropic
+### AI Provider Selection
 
 | Variable | Default | Description |
 |---|---|---|
-| `ANTHROPIC_API_URL` | `https://api.anthropic.com` | Anthropic API base URL |
-| `ANTHROPIC_MODEL` | `claude-sonnet-4-20250514` | Default Claude model for reviews |
-| `ANTHROPIC_MAX_TOKENS` | `4096` | Max tokens per response |
-| `ANTHROPIC_MAX_DIFF_CHARS_PER_CHUNK` | `120000` | Max characters per diff chunk |
-| `ANTHROPIC_MAX_DIFF_CHUNKS` | `8` | Maximum number of chunks to review |
-| `ANTHROPIC_RETRY_TRUNCATED_CHUNK_CHARS` | `60000` | Truncated chunk size on retry |
+| `AI_PROVIDER` | `anthropic` | AI provider to use: `anthropic`, `openai`, or `ollama` |
+| `AI_MODEL` | `claude-sonnet-4-20250514` | Default model name for the selected provider |
+| `AI_MAX_TOKENS` | `4096` | Max tokens per response |
+| `AI_MAX_DIFF_CHARS_PER_CHUNK` | `120000` | Max characters per diff chunk |
+| `AI_MAX_DIFF_CHUNKS` | `8` | Maximum number of chunks to review |
+| `AI_RETRY_TRUNCATED_CHUNK_CHARS` | `60000` | Truncated chunk size on retry |
+
+### Anthropic-Specific
+
+| Variable | Default | Description |
+|---|---|---|
+| `AI_ANTHROPIC_API_URL` | `https://api.anthropic.com` | Anthropic API base URL |
+| `AI_ANTHROPIC_API_KEY` | | Anthropic API key |
+| `AI_ANTHROPIC_API_VERSION` | `2023-06-01` | Anthropic API version |
+
+### OpenAI-Specific
+
+| Variable | Default | Description |
+|---|---|---|
+| `AI_OPENAI_API_URL` | `https://api.openai.com` | OpenAI API base URL (also works with compatible APIs) |
+| `AI_OPENAI_API_KEY` | | OpenAI API key |
+
+### Ollama-Specific
+
+| Variable | Default | Description |
+|---|---|---|
+| `AI_OLLAMA_API_URL` | `http://localhost:11434` | Ollama API base URL |
 
 ### Optional — Bot
 
 | Variable | Default | Description |
 |---|---|---|
-| `BOT_ALIAS` | `@claude_bot` | The mention alias the bot responds to |
+| `BOT_ALIAS` | `@ai_bot` | The mention alias the bot responds to |
 
 ### Optional — Database
 
@@ -108,7 +147,7 @@ volumes:
 
 ## Configurable Prompts
 
-System prompts sent to Claude are customizable via markdown files. Place them in the `prompts/` directory, which is mounted as a read-only volume:
+System prompts sent to the AI are customizable via markdown files. Place them in the `prompts/` directory, which is mounted as a read-only volume:
 
 ```yaml
 volumes:

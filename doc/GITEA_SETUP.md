@@ -1,6 +1,6 @@
 # Gitea Instance Setup
 
-This guide walks you through preparing your Gitea instance to work with the Anthropic Gitea Bot.
+This guide walks you through preparing your Gitea instance to work with the AI Gitea Bot.
 
 ## 1. Create the Bot User
 
@@ -9,8 +9,8 @@ The bot needs its own Gitea user account to post reviews and comments.
 1. Log in to your Gitea instance as an **administrator**
 2. Navigate to **Site Administration → User Accounts → Create User Account**
 3. Fill in the details:
-   - **Username:** `claude_bot` (or any name you prefer — must match the `BOT_ALIAS` setting, e.g., `@claude_bot`)
-   - **Email:** `claude_bot@noreply.localhost`
+   - **Username:** `ai_bot` (or any name you prefer — must match the `BOT_ALIAS` setting, e.g., `@ai_bot`)
+   - **Email:** `ai_bot@noreply.localhost`
    - **Password:** Choose a strong password
 4. Click **Create User Account**
 
@@ -24,13 +24,13 @@ The bot needs read/write access to repositories where it should perform code rev
 
 1. Navigate to the organization's **Settings → Members**
 2. Click **Invite Member**
-3. Search for `claude_bot` and add it
+3. Search for `ai_bot` and add it
 4. Assign the **Write** role (or create a team with appropriate permissions)
 
 ### Option B: Per-Repository Access
 
 1. Navigate to the repository's **Settings → Collaborators**
-2. Search for `claude_bot`
+2. Search for `ai_bot`
 3. Add with **Write** access
 
 The bot needs at minimum:
@@ -41,10 +41,10 @@ The bot needs at minimum:
 
 The bot authenticates against the Gitea API using a personal access token.
 
-1. Log in as the `claude_bot` user
+1. Log in as the `ai_bot` user
 2. Go to **Settings → Applications**
 3. Under **Manage Access Tokens**, click **Generate New Token**
-4. Give it a descriptive name, e.g., `anthropic-gitea-bot`
+4. Give it a descriptive name, e.g., `ai-gitea-bot`
 5. Select the following **permissions**:
    - ✅ `write:issue` — Post review comments, add reactions
    - ✅ `write:repository` — Read diffs, post pull request reviews
@@ -92,7 +92,7 @@ This allows different repositories or organizations to use different review styl
 
 ## 5. Configure the Bot Alias
 
-The `BOT_ALIAS` environment variable (default: `@claude_bot`) must match the username of the bot account in Gitea, prefixed with `@`.
+The `BOT_ALIAS` environment variable (default: `@ai_bot`) must match the username of the bot account in Gitea, prefixed with `@`.
 
 If your bot user is named `my_review_bot`, set:
 
@@ -105,9 +105,8 @@ export BOT_ALIAS=@my_review_bot
 After setup, create a test pull request. The bot should:
 
 1. Automatically post an AI-generated code review
-2. Respond when mentioned in PR comments (e.g., `@claude_bot explain this`)
+2. Respond when mentioned in PR comments (e.g., `@ai_bot explain this`)
 3. Respond to inline review comments mentioning the bot
 4. React with 👀 to acknowledge commands
 
 Check the bot's application logs for troubleshooting if reviews don't appear.
-

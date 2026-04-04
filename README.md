@@ -1,8 +1,8 @@
-# Anthropic Gitea Bot
+# AI Gitea Bot
 
-![Anthropic Gitea Bot](doc/screenshot_small.png)
+![AI Gitea Bot](doc/screenshot_small.png)
 
-A Spring Boot application that connects your Gitea instance with the Anthropic Claude API to provide automated, AI-powered code reviews on Pull Requests. The bot reviews new PRs, responds to questions in comments, and answers inline review comments — all while maintaining conversation context across interactions.
+A Spring Boot application that connects your Gitea instance with AI providers to deliver automated, AI-powered code reviews on Pull Requests. The bot supports **multiple AI providers** — Anthropic Claude, OpenAI, and Ollama (local LLMs) — and can review new PRs, respond to questions in comments, and answer inline review comments while maintaining conversation context across interactions.
 
 ## Features
 
@@ -14,7 +14,7 @@ When a Pull Request is opened or updated, the bot automatically reviews the diff
 
 ### 💬 Interactive Bot Commands
 
-Mention the bot (e.g., `@claude_bot`) in any PR comment to ask questions or request additional analysis. The bot acknowledges with 👀 and responds using the full conversation history.
+Mention the bot (e.g., `@ai_bot`) in any PR comment to ask questions or request additional analysis. The bot acknowledges with 👀 and responds using the full conversation history.
 
 <img src="doc/screenshot_code_review_with_comment.png" alt="Code Review with Comment" width="600"/>
 
@@ -24,44 +24,74 @@ Mention the bot in an inline review comment on a specific code line. The bot inc
 
 <img src="doc/screenshot_code_review_with_inline_comment.png" alt="Code Review with Inline Comment" width="600"/>
 
+### 🔌 Multiple AI Providers
+
+Choose the AI provider that fits your needs:
+
+| Provider | Use Case |
+|---|---|
+| **Anthropic** | Claude models via Anthropic API (default) |
+| **OpenAI** | GPT models via OpenAI API or compatible endpoints |
+| **Ollama** | Run open-source LLMs locally — no API key needed |
+
 ### More Features
 
 - **Session Management** — Maintains conversation history per PR, persisted in a database, enabling context-aware follow-up reviews
 - **Configurable System Prompts** — Define multiple review profiles (security audit, performance review, etc.) via markdown files, selectable per webhook
-- **Per-Prompt Overrides** — Each prompt profile can override the Claude model and Gitea API token
+- **Per-Prompt Overrides** — Each prompt profile can override the AI model and Gitea API token
 - **Review Submitted Handling** — Processes inline comments submitted as part of a Gitea review by fetching them from the API
 - **Health Endpoint** — `/actuator/health` for monitoring and orchestration
 
 ## Quick Start
 
+### With Anthropic (default)
+
 ```bash
 export GITEA_URL=https://your-gitea-instance.com
 export GITEA_TOKEN=your-gitea-api-token
-export ANTHROPIC_API_KEY=your-anthropic-api-key
+export AI_ANTHROPIC_API_KEY=your-anthropic-api-key
 
 docker compose up --build -d
 ```
 
-This starts the bot on port 8080 along with a PostgreSQL database for session persistence.
+### With OpenAI
 
-➡️ See [Deployment Guide](doc/DEPLOYMENT.md) for detailed configuration options.
+```bash
+export GITEA_URL=https://your-gitea-instance.com
+export GITEA_TOKEN=your-gitea-api-token
+export AI_PROVIDER=openai
+export AI_MODEL=gpt-4o
+export AI_OPENAI_API_KEY=your-openai-api-key
+
+docker compose up --build -d
+```
+
+### With Ollama (local)
+
+```bash
+export GITEA_TOKEN=your-gitea-api-token
+
+docker compose -f systemtest/docker-compose-ollama.yml up --build -d
+```
+
+This starts the bot along with a local Ollama instance and a Gitea server. See [Using Ollama](doc/OLLAMA.md) for details.
 
 ## Architecture Overview
 
 ```mermaid
 graph LR
     Gitea["Gitea Instance"]
-    Bot["Anthropic Gitea Bot<br/>(Spring Boot)"]
-    Anthropic["Anthropic Claude API"]
+    Bot["AI Gitea Bot<br/>(Spring Boot)"]
+    AI["AI Provider<br/>(Anthropic / OpenAI / Ollama)"]
     DB["PostgreSQL"]
 
     Gitea -- "Webhooks" --> Bot
     Bot -- "Fetch diff, post reviews" --> Gitea
-    Bot -- "AI review requests" --> Anthropic
+    Bot -- "AI review requests" --> AI
     Bot -- "Session persistence" --> DB
 ```
 
-The bot receives webhooks from Gitea, fetches PR diffs, sends them to Claude for review, and posts the results back. Conversation sessions are persisted in a database to maintain context across PR updates and follow-up interactions.
+The bot receives webhooks from Gitea, fetches PR diffs, sends them to the configured AI provider for review, and posts the results back. Conversation sessions are persisted in a database to maintain context across PR updates and follow-up interactions.
 
 ➡️ See [Architecture Documentation](doc/ARCHITECTURE.md) for detailed component diagrams and request flows.
 
@@ -72,6 +102,7 @@ The bot receives webhooks from Gitea, fetches PR diffs, sends them to Claude for
 | [Architecture](doc/ARCHITECTURE.md) | Component diagrams, request flows, webhook routing |
 | [Gitea Setup](doc/GITEA_SETUP.md) | Bot user creation, permissions, API tokens, webhook configuration |
 | [Deployment](doc/DEPLOYMENT.md) | Docker Compose deployment, environment variables, prompt configuration |
+| [Using Ollama](doc/OLLAMA.md) | Running with local LLMs via Ollama |
 | [Local Development](doc/LOCAL_DEVELOPMENT.md) | Building, testing, local Gitea instance, project structure |
 | [Contributing](CONTRIBUTING.md) | Contribution guidelines, coding conventions |
 | [Code of Conduct](CODE_OF_CONDUCT.md) | Community standards |
@@ -79,5 +110,3 @@ The bot receives webhooks from Gitea, fetches PR diffs, sends them to Claude for
 ## License
 
 [MIT](LICENSE)
-
-

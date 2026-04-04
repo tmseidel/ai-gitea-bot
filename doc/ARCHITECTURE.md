@@ -1,14 +1,14 @@
 # Architecture
 
-This document describes the high-level architecture of the Anthropic Gitea Bot, including component responsibilities and request flows.
+This document describes the high-level architecture of the AI Gitea Bot, including component responsibilities and request flows.
 
 ## System Overview
 
 ```mermaid
 graph LR
     Gitea["Gitea Instance"]
-    Bot["Anthropic Gitea Bot"]
-    Anthropic["Anthropic API"]
+    Bot["AI Gitea Bot"]
+    AI["AI Provider<br/>(Anthropic / OpenAI / Ollama)"]
     DB["PostgreSQL Database"]
 
     Gitea -- "Webhook (PR/Comment/Review event)" --> Bot
@@ -16,12 +16,12 @@ graph LR
     Bot -- "Post review/comment" --> Gitea
     Bot -- "Fetch reviews & comments" --> Gitea
     Bot -- "Add reaction" --> Gitea
-    Bot -- "Review diff / Chat" --> Anthropic
-    Anthropic -- "Review text" --> Bot
+    Bot -- "Review diff / Chat" --> AI
+    AI -- "Review text" --> Bot
     Bot -- "Persist/Load session" --> DB
 ```
 
-The bot sits between a Gitea instance and the Anthropic Claude API. When a pull request is opened or updated, Gitea sends a webhook to the bot. The bot fetches the diff, sends it to Claude for review, and posts the review back as a PR comment. Conversation sessions are persisted in a database so the bot maintains context across PR updates and comment interactions.
+The bot sits between a Gitea instance and a configurable AI provider. When a pull request is opened or updated, Gitea sends a webhook to the bot. The bot fetches the diff, sends it to the configured AI provider for review, and posts the review back as a PR comment. Conversation sessions are persisted in a database so the bot maintains context across PR updates and comment interactions.
 
 The bot also responds to inline review comments and submitted reviews containing bot mentions by fetching the relevant review data from the Gitea API and posting context-aware replies.
 
@@ -35,8 +35,17 @@ graph TD
         SessionService["SessionService<br/><i>Session lifecycle</i>"]
         PromptService["PromptService<br/><i>Prompt resolution</i>"]
         GiteaClient["GiteaApiClient<br/><i>Gitea REST calls</i>"]
-        AnthropicClient["AnthropicClient<br/><i>Claude API calls</i>"]
-        AppConfig["AppConfig<br/><i>RestClient beans</i>"]
+
+        subgraph "AI Abstraction Layer"
+            AiInterface["AiClient<br/><i>Interface</i>"]
+            AbstractClient["AbstractAiClient<br/><i>Chunking & retry logic</i>"]
+            AnthropicImpl["AnthropicAiClient"]
+            OpenAiImpl["OpenAiClient"]
+            OllamaImpl["OllamaClient"]
+        end
+
+        AppConfig["AppConfig<br/><i>Conditional bean creation</i>"]
+        AiConfig["AiConfigProperties<br/><i>Provider config</i>"]
         PromptConfig["PromptConfigProperties<br/><i>Prompt definitions</i>"]
         BotConfig["BotConfigProperties<br/><i>Bot alias config</i>"]
         SessionRepo["ReviewSessionRepository<br/><i>JPA repository</i>"]
@@ -45,6 +54,8 @@ graph TD
     subgraph "External"
         Gitea["Gitea"]
         Anthropic["Anthropic API"]
+        OpenAI["OpenAI API"]
+        Ollama["Ollama (local)"]
         PromptFiles["Prompt Files<br/><i>prompts/*.md</i>"]
         DB["Database<br/><i>PostgreSQL / H2</i>"]
     end
@@ -54,16 +65,58 @@ graph TD
     ReviewService --> BotConfig
     ReviewService --> PromptService
     ReviewService --> GiteaClient
-    ReviewService --> AnthropicClient
+    ReviewService --> AiInterface
     ReviewService --> SessionService
     SessionService --> SessionRepo
     SessionRepo --> DB
     PromptService --> PromptConfig
     PromptService --> PromptFiles
     GiteaClient --> Gitea
-    AnthropicClient --> Anthropic
-    AppConfig --> GiteaClient
-    AppConfig --> AnthropicClient
+    AiInterface -.-> AbstractClient
+    AbstractClient -.-> AnthropicImpl
+    AbstractClient -.-> OpenAiImpl
+    AbstractClient -.-> OllamaImpl
+    AnthropicImpl --> Anthropic
+    OpenAiImpl --> OpenAI
+    OllamaImpl --> Ollama
+    AppConfig --> AiConfig
+    AppConfig --> AiInterface
+```
+
+## AI Provider Abstraction
+
+The bot uses a provider-agnostic `AiClient` interface to decouple review logic from any specific AI service:
+
+```
+AiClient (interface)
+ └── AbstractAiClient (abstract class — chunking, retry, message building)
+      ├── AnthropicAiClient (Anthropic Messages API)
+      ├── OpenAiClient (OpenAI Chat Completions API)
+      └── OllamaClient (Ollama /api/chat)
+```
+
+### Provider Differences
+
+| Feature | Anthropic | OpenAI | Ollama |
+|---|---|---|---|
+| System prompt | Top-level `system` field | `role: "system"` message | `role: "system"` message |
+| Endpoint | `/v1/messages` | `/v1/chat/completions` | `/api/chat` |
+| Auth | `x-api-key` header | `Bearer` token | None |
+| Streaming | Not used | Not used | Disabled (`stream: false`) |
+
+### Conditional Bean Creation
+
+The `AppConfig` uses `@ConditionalOnProperty(name = "ai.provider")` to create exactly one `AiClient` bean based on configuration:
+
+```java
+@ConditionalOnProperty(name = "ai.provider", havingValue = "anthropic", matchIfMissing = true)
+public AiClient anthropicAiClient(AiConfigProperties config) { ... }
+
+@ConditionalOnProperty(name = "ai.provider", havingValue = "openai")
+public AiClient openAiClient(AiConfigProperties config) { ... }
+
+@ConditionalOnProperty(name = "ai.provider", havingValue = "ollama")
+public AiClient ollamaClient(AiConfigProperties config) { ... }
 ```
 
 ## Components
@@ -85,8 +138,8 @@ graph TD
 
 - **Package:** `org.remus.giteabot.review`
 - Orchestrates all review and interaction flows:
-  - **`reviewPullRequest()`**: Initial review or follow-up review on PR update. Fetches diff, sends to Claude, posts review comment.
-  - **`handleBotCommand()`**: Responds to bot mentions in regular PR comments. Acknowledges with 👀 reaction, sends conversation to Claude, posts response.
+  - **`reviewPullRequest()`**: Initial review or follow-up review on PR update. Fetches diff, sends to the AI provider, posts review comment.
+  - **`handleBotCommand()`**: Responds to bot mentions in regular PR comments. Acknowledges with 👀 reaction, sends conversation to the AI provider, posts response.
   - **`handleInlineComment()`**: Responds to bot mentions in inline code review comments. Includes file path and diff hunk context. Replies inline at the same file/line, falls back to regular comment.
   - **`handleReviewSubmitted()`**: Handles review submission events where the individual comments are not in the webhook payload. Fetches reviews and their comments from the Gitea API, filters for bot mentions, and processes each matching comment.
 - Manages session lifecycle (create, reuse, enrich with PR context)
@@ -100,7 +153,7 @@ graph TD
   - Retrieves existing sessions for PR updates and comment interactions
   - Stores conversation messages (user/assistant pairs)
   - Deletes sessions when PRs are closed or merged
-- Converts stored messages to Anthropic API format for multi-turn conversations
+- Converts stored messages to provider-agnostic `AiMessage` format for multi-turn conversations
 
 ### ReviewSession / ConversationMessage
 
@@ -118,13 +171,15 @@ graph TD
 - Falls back to the `default` definition, then to a hardcoded built-in prompt
 - Resolves per-prompt model and Gitea token overrides
 
-### AnthropicClient
+### AiClient / AbstractAiClient
 
-- **Package:** `org.remus.giteabot.anthropic`
-- Sends review requests to the Anthropic Messages API
-- Supports single-shot diff reviews with chunking
-- Supports multi-turn conversations via the `chat()` method for session-based interactions
-- Retries with truncated input when prompts exceed model limits
+- **Package:** `org.remus.giteabot.ai`
+- `AiClient` is the provider-agnostic interface used by `CodeReviewService`
+- `AbstractAiClient` contains shared logic: diff chunking, retry on token limits, message building
+- Provider implementations:
+  - **AnthropicAiClient** (`org.remus.giteabot.ai.anthropic`) — Anthropic Messages API with `system` as a top-level field
+  - **OpenAiClient** (`org.remus.giteabot.ai.openai`) — OpenAI Chat Completions API with `role: "system"` message
+  - **OllamaClient** (`org.remus.giteabot.ai.ollama`) — Ollama `/api/chat` with streaming disabled
 - Supports system prompt and model overrides per request
 
 ### GiteaApiClient
@@ -149,13 +204,20 @@ graph TD
 ### BotConfigProperties
 
 - **Package:** `org.remus.giteabot.config`
-- Configures the bot mention alias (default: `@claude_bot`)
+- Configures the bot mention alias (default: `@ai_bot`)
 - Used by both the webhook controller (for filtering) and the code review service (for review comment filtering)
 
 ### AppConfig
 
 - **Package:** `org.remus.giteabot.config`
-- Configures `RestClient` beans for Gitea and Anthropic API communication
+- Configures `RestClient` bean for Gitea API communication
+- Uses `@ConditionalOnProperty` to create the correct `AiClient` bean based on `ai.provider`
+
+### AiConfigProperties
+
+- **Package:** `org.remus.giteabot.ai`
+- Maps `ai.*` configuration properties for provider selection and per-provider settings
+- Contains nested config classes for Anthropic, OpenAI, and Ollama
 
 ### PromptConfigProperties
 
@@ -176,7 +238,7 @@ sequenceDiagram
     participant DB as Database
     participant Prompt as PromptService
     participant GiteaAPI as GiteaApiClient
-    participant Claude as AnthropicClient
+    participant AI as AiClient
 
     Gitea->>Controller: POST /api/webhook (PR opened)
     Controller->>Review: reviewPullRequest(payload, promptName)
@@ -191,8 +253,8 @@ sequenceDiagram
     DB-->>Session: session
     Session-->>Review: session (new)
     Review->>Prompt: getSystemPrompt(promptName)
-    Review->>Claude: reviewDiff(title, body, diff, prompt, model)
-    Claude-->>Review: review text
+    Review->>AI: reviewDiff(title, body, diff, prompt, model)
+    AI-->>Review: review text
     Review->>Session: addMessage("user", summary)
     Review->>Session: addMessage("assistant", review)
     Session->>DB: persist messages
@@ -209,7 +271,7 @@ sequenceDiagram
     participant Review as CodeReviewService
     participant Session as SessionService
     participant DB as Database
-    participant Claude as AnthropicClient
+    participant AI as AiClient
 
     Gitea->>Controller: POST /api/webhook (PR synchronized)
     Controller->>Review: reviewPullRequest(payload, promptName)
@@ -217,10 +279,10 @@ sequenceDiagram
     Session->>DB: find existing
     DB-->>Session: session (with history)
     Session-->>Review: session (has messages)
-    Review->>Session: toAnthropicMessages(session)
+    Review->>Session: toAiMessages(session)
     Session-->>Review: conversation history
-    Review->>Claude: chat(history, updateMessage, prompt, model)
-    Claude-->>Review: updated review
+    Review->>AI: chat(history, updateMessage, prompt, model)
+    AI-->>Review: updated review
     Review->>Session: addMessage("user", update)
     Review->>Session: addMessage("assistant", review)
     Review->>Gitea: postReviewComment(review)
@@ -237,9 +299,9 @@ sequenceDiagram
     participant Session as SessionService
     participant DB as Database
     participant GiteaAPI as GiteaApiClient
-    participant Claude as AnthropicClient
+    participant AI as AiClient
 
-    User->>Gitea: Comment: "@claude_bot explain this"
+    User->>Gitea: Comment: "@ai_bot explain this"
     Gitea->>Controller: POST /api/webhook (issue_comment)
     Controller->>Review: handleBotCommand(payload)
     Review->>GiteaAPI: addReaction(commentId, "eyes")
@@ -247,10 +309,10 @@ sequenceDiagram
     Review->>Session: getOrCreateSession(owner, repo, pr)
     Session->>DB: find existing
     DB-->>Session: session (with history)
-    Review->>Session: toAnthropicMessages(session)
+    Review->>Session: toAiMessages(session)
     Session-->>Review: conversation history
-    Review->>Claude: chat(history, comment, prompt, model)
-    Claude-->>Review: response
+    Review->>AI: chat(history, comment, prompt, model)
+    AI-->>Review: response
     Review->>Session: addMessage("user", comment)
     Review->>Session: addMessage("assistant", response)
     Review->>GiteaAPI: postComment(owner, repo, pr, response)
@@ -267,15 +329,15 @@ sequenceDiagram
     participant Review as CodeReviewService
     participant Session as SessionService
     participant GiteaAPI as GiteaApiClient
-    participant Claude as AnthropicClient
+    participant AI as AiClient
 
-    User->>Gitea: Inline comment on code: "@claude_bot explain this"
+    User->>Gitea: Inline comment on code: "@ai_bot explain this"
     Gitea->>Controller: POST /api/webhook (comment with path)
     Controller->>Review: handleInlineComment(payload)
     Review->>GiteaAPI: addReaction(commentId, "eyes")
     Review->>Session: getOrCreateSession(owner, repo, pr)
-    Review->>Claude: chat(history, fileContext + diffHunk + question)
-    Claude-->>Review: response
+    Review->>AI: chat(history, fileContext + diffHunk + question)
+    AI-->>Review: response
     Review->>GiteaAPI: postInlineReviewComment(file, line, response)
     Note right of GiteaAPI: Falls back to postComment() on error
 ```
@@ -289,7 +351,7 @@ sequenceDiagram
     participant Controller as WebhookController
     participant Review as CodeReviewService
     participant GiteaAPI as GiteaApiClient
-    participant Claude as AnthropicClient
+    participant AI as AiClient
 
     User->>Gitea: Submit review with inline comments
     Gitea->>Controller: POST /api/webhook (action: "reviewed")
@@ -302,8 +364,8 @@ sequenceDiagram
     Review->>Review: filter for bot mentions
     loop For each bot-mentioning comment
         Review->>GiteaAPI: addReaction(commentId, "eyes")
-        Review->>Claude: chat(history, fileContext + question)
-        Claude-->>Review: response
+        Review->>AI: chat(history, fileContext + question)
+        AI-->>Review: response
         Review->>GiteaAPI: postInlineReviewComment(file, line, response)
     end
 ```

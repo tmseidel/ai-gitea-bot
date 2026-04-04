@@ -1,2 +1,1 @@
-AI-powered code review bot for Gitea using Anthropic Claude. Automatically reviews PRs, responds to comments, and answers inline review questions.
-
+AI-powered code review bot for Gitea supporting Anthropic, OpenAI, and Ollama. Automatically reviews PRs, responds to comments, and answers inline review questions.

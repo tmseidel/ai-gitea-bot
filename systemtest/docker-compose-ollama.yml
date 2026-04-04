@@ -1,0 +1,86 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      GITEA_URL: http://gitea:3000
+      GITEA_TOKEN: ${GITEA_TOKEN:?Set GITEA_TOKEN}
+      AI_PROVIDER: ollama
+      AI_MODEL: ${AI_MODEL:-llama3.2:1b}
+      AI_MAX_TOKENS: 2048
+      AI_MAX_DIFF_CHARS_PER_CHUNK: 30000
+      AI_MAX_DIFF_CHUNKS: 4
+      AI_RETRY_TRUNCATED_CHUNK_CHARS: 15000
+      AI_OLLAMA_API_URL: http://ollama:11434
+      PROMPTS_DIR: /app/prompts
+      BOT_ALIAS: ${BOT_ALIAS:-@ai_bot}
+      DATABASE_URL: jdbc:postgresql://db:5432/giteabot
+      DATABASE_USERNAME: giteabot
+      DATABASE_PASSWORD: giteabot
+    volumes:
+      - ../prompts:/app/prompts:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+    restart: unless-stopped
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    entrypoint: ["sh", "-c", "sleep 5 && ollama pull ${AI_MODEL:-llama3.2:1b}"]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+  gitea:
+    image: gitea/gitea:latest
+    ports:
+      - "3000:3000"
+    environment:
+      GITEA__database__DB_TYPE: sqlite3
+      GITEA__server__ROOT_URL: http://localhost:3000
+      GITEA__server__HTTP_PORT: "3000"
+    volumes:
+      - gitea_data:/data
+    restart: unless-stopped
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: giteabot
+      POSTGRES_USER: giteabot
+      POSTGRES_PASSWORD: giteabot
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U giteabot"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  ollama_data:
+  gitea_data:

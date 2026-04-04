@@ -33,7 +33,14 @@ The key environment variables to set:
 ```bash
 export GITEA_URL=http://localhost:3000
 export GITEA_TOKEN=your-local-gitea-token
-export ANTHROPIC_API_KEY=your-api-key
+export AI_ANTHROPIC_API_KEY=your-api-key
+# Or for OpenAI:
+# export AI_PROVIDER=openai
+# export AI_MODEL=gpt-4o
+# export AI_OPENAI_API_KEY=your-openai-key
+# Or for Ollama:
+# export AI_PROVIDER=ollama
+# export AI_MODEL=llama3.2:1b
 ```
 
 Or edit `src/main/resources/application.properties` directly for local development.
@@ -94,8 +101,10 @@ src/main/java/org/remus/giteabot/
 ├── config/       # Configuration classes, prompt service, bot config
 ├── gitea/        # Webhook controller, API client, payload models
 │   └── model/    # WebhookPayload, GiteaReview, GiteaReviewComment
-├── anthropic/    # Anthropic API client and request/response models
-│   └── model/    # AnthropicRequest, AnthropicResponse
+├── ai/           # AI provider abstraction layer
+│   ├── anthropic/  # Anthropic API client and request/response models
+│   ├── openai/     # OpenAI API client and request/response models
+│   └── ollama/     # Ollama API client and request/response models
 ├── review/       # CodeReviewService (orchestration)
 └── session/      # ReviewSession, ConversationMessage, SessionService
 ```

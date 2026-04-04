@@ -1,0 +1,166 @@
+# Using Ollama
+
+This guide covers running the AI Gitea Bot with [Ollama](https://ollama.com) for fully local, private AI-powered code reviews — no external API keys required.
+
+## Overview
+
+Ollama lets you run open-source LLMs locally. The bot connects to Ollama's `/api/chat` endpoint, sending diffs and conversation history just like it would to Anthropic or OpenAI, but everything stays on your machine.
+
+## Quick Start
+
+A ready-to-use Docker Compose environment is provided in `systemtest/`:
+
+```bash
+export GITEA_TOKEN=your-gitea-api-token
+
+docker compose -f systemtest/docker-compose-ollama.yml up --build -d
+```
+
+This starts:
+- **Ollama** on port `11434` with a small LLM (`llama3.2:1b` by default)
+- **Gitea** on port `3000` for local testing
+- **The bot** on port `8080`, configured to use Ollama
+- **PostgreSQL** for session persistence
+
+The `ollama-pull` service automatically downloads the configured model on first start.
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `AI_PROVIDER` | `ollama` | Must be `ollama` to use the Ollama backend |
+| `AI_MODEL` | `llama3.2:1b` | Ollama model name (must be pulled first) |
+| `AI_OLLAMA_API_URL` | `http://localhost:11434` | Ollama API base URL |
+| `AI_MAX_TOKENS` | `2048` | Max tokens per response |
+| `AI_MAX_DIFF_CHARS_PER_CHUNK` | `30000` | Max characters per diff chunk (smaller for local models) |
+| `AI_MAX_DIFF_CHUNKS` | `4` | Maximum number of chunks to review |
+
+### Using with an Existing Docker Compose
+
+Add Ollama settings to your existing `docker-compose.yml`:
+
+```yaml
+services:
+  app:
+    environment:
+      AI_PROVIDER: ollama
+      AI_MODEL: llama3.2:1b
+      AI_OLLAMA_API_URL: http://ollama:11434
+      # ... other settings
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+
+volumes:
+  ollama_data:
+```
+
+### Using with a Host-Installed Ollama
+
+If Ollama is already installed on your host machine:
+
+```bash
+# Pull a model
+ollama pull llama3.2:1b
+
+# Start the bot pointing to host Ollama
+export AI_PROVIDER=ollama
+export AI_MODEL=llama3.2:1b
+export AI_OLLAMA_API_URL=http://localhost:11434
+
+mvn spring-boot:run
+```
+
+## Recommended Models
+
+| Model | Size | Notes |
+|---|---|---|
+| `llama3.2:1b` | ~1.3 GB | Smallest, fastest — good for testing |
+| `llama3.2:3b` | ~2.0 GB | Better quality, still fast |
+| `codellama:7b` | ~3.8 GB | Code-focused, better for reviews |
+| `deepseek-coder-v2:16b` | ~8.9 GB | High quality code reviews |
+| `qwen2.5-coder:7b` | ~4.7 GB | Strong code understanding |
+
+Choose a model based on your available memory and quality requirements. Smaller models are faster but may produce lower-quality reviews.
+
+### Pulling a Model
+
+```bash
+# Via CLI
+ollama pull llama3.2:1b
+
+# Or via API
+curl http://localhost:11434/api/pull -d '{"name": "llama3.2:1b"}'
+```
+
+## Tuning for Local Models
+
+Local models typically have smaller context windows and are slower than cloud APIs. Adjust these settings for best results:
+
+```properties
+# Smaller chunks to fit in context window
+ai.max-diff-chars-per-chunk=30000
+
+# Fewer chunks to reduce processing time
+ai.max-diff-chunks=4
+
+# Smaller retry size
+ai.retry-truncated-chunk-chars=15000
+
+# Lower max tokens for faster responses
+ai.max-tokens=2048
+```
+
+## GPU Acceleration
+
+For significantly better performance, use Ollama with GPU support:
+
+```yaml
+ollama:
+  image: ollama/ollama:latest
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+```
+
+This requires the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html).
+
+## Troubleshooting
+
+### Model Not Found
+
+If you see errors about the model not being found, pull it first:
+
+```bash
+docker compose exec ollama ollama pull llama3.2:1b
+```
+
+### Slow Responses
+
+- Use a smaller model (e.g., `llama3.2:1b`)
+- Reduce `AI_MAX_DIFF_CHARS_PER_CHUNK` and `AI_MAX_DIFF_CHUNKS`
+- Enable GPU acceleration
+- Increase container memory limits
+
+### Connection Refused
+
+Ensure the Ollama service is healthy before the bot starts. The provided Docker Compose uses health checks to handle this automatically.
