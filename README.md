@@ -74,7 +74,7 @@ export GITEA_TOKEN=your-gitea-api-token
 docker compose -f systemtest/docker-compose-ollama.yml up --build -d
 ```
 
-This starts the bot along with a local Ollama instance and a Gitea server. See [Using Ollama](doc/OLLAMA.md) for details.
+This compose file provisions the local Ollama services only. Start the bot and your Gitea server separately, then see [Using Ollama](doc/OLLAMA.md) for details on configuring the bot to use Ollama.
 
 ## Architecture Overview
 
