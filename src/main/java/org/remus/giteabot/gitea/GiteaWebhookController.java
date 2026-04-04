@@ -23,6 +23,12 @@ public class GiteaWebhookController {
     @PostMapping
     public ResponseEntity<String> handleWebhook(@RequestBody WebhookPayload payload,
                                                 @RequestParam(name = "prompt", required = false) String promptName) {
+        // Ignore events triggered by the bot itself to prevent infinite loops
+        if (isBotUser(payload)) {
+            log.debug("Ignoring webhook event from bot user '{}'", botConfig.getUsername());
+            return ResponseEntity.ok("ignored");
+        }
+
         // Handle inline review comments (bot mention in code-level review comments)
         if (payload.getComment() != null && payload.getComment().getPath() != null
                 && !payload.getComment().getPath().isBlank()) {
@@ -145,5 +151,26 @@ public class GiteaWebhookController {
         codeReviewService.handleBotCommand(payload, promptName);
 
         return ResponseEntity.ok("command received");
+    }
+
+    /**
+     * Checks whether the webhook event was triggered by the bot's own Gitea user.
+     * This prevents infinite loops where the bot reacts to its own comments.
+     */
+    private boolean isBotUser(WebhookPayload payload) {
+        String botUsername = botConfig.getUsername();
+        if (botUsername == null || botUsername.isBlank()) {
+            return false;
+        }
+
+        // Check the sender field (present on most webhook events)
+        if (payload.getSender() != null && botUsername.equalsIgnoreCase(payload.getSender().getLogin())) {
+            return true;
+        }
+
+        // Check the comment author (defense-in-depth for comment events)
+        return payload.getComment() != null
+                && payload.getComment().getUser() != null
+                && botUsername.equalsIgnoreCase(payload.getComment().getUser().getLogin());
     }
 }

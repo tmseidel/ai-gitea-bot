@@ -289,10 +289,12 @@ public class CodeReviewService {
             List<GiteaReviewComment> comments = giteaApiClient.getReviewComments(
                     owner, repo, prNumber, latestReview.getId(), giteaToken);
 
-            // Filter for comments that mention the bot
+            // Filter for comments that mention the bot, excluding the bot's own comments
             String botAlias = botConfig.getAlias();
+            String botUsername = botConfig.getUsername();
             List<GiteaReviewComment> botMentionComments = comments.stream()
                     .filter(c -> c.getBody() != null && c.getBody().contains(botAlias))
+                    .filter(c -> !isBotComment(c, botUsername))
                     .toList();
 
             if (botMentionComments.isEmpty()) {
@@ -435,5 +437,18 @@ public class CodeReviewService {
             return payload.getPullRequest().getNumber();
         }
         return null;
+    }
+
+    /**
+     * Checks whether a review comment was written by the bot itself.
+     * Prevents the bot from responding to its own comments in review-submitted events.
+     */
+    private boolean isBotComment(GiteaReviewComment comment, String botUsername) {
+        if (botUsername == null || botUsername.isBlank()) {
+            return false;
+        }
+        return comment.getUser() != null
+                && comment.getUser().getLogin() != null
+                && botUsername.equalsIgnoreCase(comment.getUser().getLogin());
     }
 }

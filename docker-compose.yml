@@ -22,7 +22,7 @@ services:
       AI_OPENAI_API_KEY: ${AI_OPENAI_API_KEY:-}
       AI_OLLAMA_API_URL: ${AI_OLLAMA_API_URL:-http://localhost:11434}
       PROMPTS_DIR: /app/prompts
-      BOT_ALIAS: ${BOT_ALIAS:-@ai_bot}
+      BOT_USERNAME: ${BOT_USERNAME:-ai_bot}
       DATABASE_URL: jdbc:postgresql://db:5432/giteabot
       DATABASE_USERNAME: ${DATABASE_USERNAME:-giteabot}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:-giteabot}

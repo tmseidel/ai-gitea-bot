@@ -294,6 +294,7 @@ class CodeReviewServiceTest {
         session.addMessage("assistant", "Initial review");
 
         when(botConfig.getAlias()).thenReturn("@ai_bot");
+        when(botConfig.getUsername()).thenReturn("ai_bot");
         when(promptService.resolveGiteaToken(isNull(), isNull())).thenReturn(null);
         when(promptService.getSystemPrompt(isNull())).thenReturn("test prompt");
         when(promptService.resolveModel(isNull(), isNull())).thenReturn(null);
@@ -362,6 +363,7 @@ class CodeReviewServiceTest {
         WebhookPayload payload = createReviewSubmittedPayload();
 
         when(botConfig.getAlias()).thenReturn("@ai_bot");
+        when(botConfig.getUsername()).thenReturn("ai_bot");
         when(promptService.resolveGiteaToken(isNull(), isNull())).thenReturn(null);
         when(promptService.getSystemPrompt(isNull())).thenReturn("test prompt");
         when(promptService.resolveModel(isNull(), isNull())).thenReturn(null);
@@ -380,6 +382,41 @@ class CodeReviewServiceTest {
         codeReviewService.handleReviewSubmitted(payload, null);
 
         verify(aiClient, never()).chat(anyList(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void handleReviewSubmitted_botOwnComments_filtered() {
+        WebhookPayload payload = createReviewSubmittedPayload();
+
+        when(botConfig.getAlias()).thenReturn("@ai_bot");
+        when(botConfig.getUsername()).thenReturn("ai_bot");
+        when(promptService.resolveGiteaToken(isNull(), isNull())).thenReturn(null);
+        when(promptService.getSystemPrompt(isNull())).thenReturn("test prompt");
+        when(promptService.resolveModel(isNull(), isNull())).thenReturn(null);
+
+        GiteaReview review = new GiteaReview();
+        review.setId(10L);
+        when(giteaApiClient.getReviews("testowner", "testrepo", 2L, null))
+                .thenReturn(List.of(review));
+
+        // Bot's own comment that mentions itself (e.g. from its formatted response)
+        GiteaReviewComment botOwnComment = new GiteaReviewComment();
+        botOwnComment.setId(200L);
+        botOwnComment.setBody("## 🤖 Bot Response\n\nSome answer mentioning @ai_bot");
+        botOwnComment.setPath("src/main/java/Foo.java");
+        botOwnComment.setLine(10);
+        GiteaReview.GiteaUser botUser = new GiteaReview.GiteaUser();
+        botUser.setLogin("ai_bot");
+        botOwnComment.setUser(botUser);
+
+        when(giteaApiClient.getReviewComments("testowner", "testrepo", 2L, 10L, null))
+                .thenReturn(List.of(botOwnComment));
+
+        codeReviewService.handleReviewSubmitted(payload, null);
+
+        // Bot's own comment should be filtered out — no AI call, no reaction
+        verify(aiClient, never()).chat(anyList(), anyString(), anyString(), anyString());
+        verify(giteaApiClient, never()).addReaction(anyString(), anyString(), anyLong(), anyString(), anyString());
     }
 
     private WebhookPayload createTestPayload() {

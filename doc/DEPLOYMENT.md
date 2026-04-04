@@ -58,7 +58,7 @@ services:
       AI_MODEL: claude-sonnet-4-20250514
       AI_MAX_TOKENS: 4096
       AI_ANTHROPIC_API_KEY: your-api-key
-      BOT_ALIAS: "@ai_bot"
+      BOT_USERNAME: "ai_bot"
       DATABASE_URL: jdbc:postgresql://db:5432/giteabot
       DATABASE_USERNAME: giteabot
       DATABASE_PASSWORD: change-me
@@ -135,7 +135,7 @@ volumes:
 
 | Variable | Default | Description |
 |---|---|---|
-| `BOT_ALIAS` | `@ai_bot` | The mention alias the bot responds to |
+| `BOT_USERNAME` | `ai_bot` | Gitea username of the bot account (mention alias is derived as `@ai_bot`) |
 
 ### Optional — Database
 

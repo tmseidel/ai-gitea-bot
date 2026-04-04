@@ -385,6 +385,116 @@ class GiteaWebhookControllerTest {
         verify(codeReviewService).handleReviewSubmitted(any(WebhookPayload.class), eq("security"));
     }
 
+    @Test
+    void handleWebhook_botSender_ignored() throws Exception {
+        when(botConfigProperties.getUsername()).thenReturn("ai_bot");
+
+        String payload = """
+                {
+                    "action": "created",
+                    "comment": {
+                        "id": 99,
+                        "body": "@ai_bot this is the bot's own comment",
+                        "user": {"login": "ai_bot"}
+                    },
+                    "issue": {
+                        "number": 1,
+                        "title": "Test PR",
+                        "pull_request": {}
+                    },
+                    "repository": {
+                        "name": "testrepo",
+                        "full_name": "testowner/testrepo",
+                        "owner": {"login": "testowner"}
+                    },
+                    "sender": {
+                        "login": "ai_bot"
+                    }
+                }
+                """;
+
+        mockMvc.perform(post("/api/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk())
+                .andExpect(content().string("ignored"));
+
+        verify(codeReviewService, never()).handleBotCommand(any(), any());
+        verify(codeReviewService, never()).reviewPullRequest(any(), any());
+    }
+
+    @Test
+    void handleWebhook_botSenderOnPrOpened_ignored() throws Exception {
+        when(botConfigProperties.getUsername()).thenReturn("ai_bot");
+
+        String payload = """
+                {
+                    "action": "opened",
+                    "pull_request": {
+                        "number": 1,
+                        "title": "Test PR"
+                    },
+                    "repository": {
+                        "name": "testrepo",
+                        "full_name": "testowner/testrepo",
+                        "owner": {"login": "testowner"}
+                    },
+                    "sender": {
+                        "login": "ai_bot"
+                    }
+                }
+                """;
+
+        mockMvc.perform(post("/api/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk())
+                .andExpect(content().string("ignored"));
+
+        verify(codeReviewService, never()).reviewPullRequest(any(), any());
+    }
+
+    @Test
+    void handleWebhook_botCommentUser_ignored() throws Exception {
+        when(botConfigProperties.getUsername()).thenReturn("ai_bot");
+        when(botConfigProperties.getAlias()).thenReturn("@ai_bot");
+
+        String payload = """
+                {
+                    "action": "created",
+                    "comment": {
+                        "id": 100,
+                        "body": "## 🤖 Bot Response with @ai_bot mention",
+                        "user": {"login": "ai_bot"},
+                        "path": "src/Foo.java",
+                        "line": 10
+                    },
+                    "issue": {
+                        "number": 1,
+                        "title": "Test PR",
+                        "pull_request": {}
+                    },
+                    "repository": {
+                        "name": "testrepo",
+                        "full_name": "testowner/testrepo",
+                        "owner": {"login": "testowner"}
+                    },
+                    "sender": {
+                        "login": "ai_bot"
+                    }
+                }
+                """;
+
+        mockMvc.perform(post("/api/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk())
+                .andExpect(content().string("ignored"));
+
+        verify(codeReviewService, never()).handleInlineComment(any(), any());
+        verify(codeReviewService, never()).handleBotCommand(any(), any());
+    }
+
     private WebhookPayload createTestPayload(String action) {
         WebhookPayload payload = new WebhookPayload();
         payload.setAction(action);

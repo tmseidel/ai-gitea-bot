@@ -9,7 +9,7 @@ The bot needs its own Gitea user account to post reviews and comments.
 1. Log in to your Gitea instance as an **administrator**
 2. Navigate to **Site Administration → User Accounts → Create User Account**
 3. Fill in the details:
-   - **Username:** `ai_bot` (or any name you prefer — must match the `BOT_ALIAS` setting, e.g., `@ai_bot`)
+   - **Username:** `ai_bot` (or any name you prefer — must match the `BOT_USERNAME` setting)
    - **Email:** `ai_bot@noreply.localhost`
    - **Password:** Choose a strong password
 4. Click **Create User Account**
@@ -90,14 +90,14 @@ http://<bot-host>:8080/api/webhook?prompt=security
 
 This allows different repositories or organizations to use different review styles.
 
-## 5. Configure the Bot Alias
+## 5. Configure the Bot Username
 
-The `BOT_ALIAS` environment variable (default: `@ai_bot`) must match the username of the bot account in Gitea, prefixed with `@`.
+The `BOT_USERNAME` environment variable (default: `ai_bot`) must match the username of the bot account in Gitea. The mention alias (e.g., `@ai_bot`) is derived automatically.
 
 If your bot user is named `my_review_bot`, set:
 
 ```bash
-export BOT_ALIAS=@my_review_bot
+export BOT_USERNAME=my_review_bot
 ```
 
 ## Verification
