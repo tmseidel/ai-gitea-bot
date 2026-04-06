@@ -226,6 +226,7 @@ public class IssueImplementationService {
      * Generates implementation with validation and iterative correction.
      * If the generated code has syntax errors and validation is enabled,
      * the errors are sent back to the AI for correction.
+     * If the AI requests more files, they are fetched and the conversation continues.
      *
      * @return a valid ImplementationPlan, or null if generation/validation failed
      */
@@ -236,12 +237,14 @@ public class IssueImplementationService {
         int maxRetries = agentConfig.getValidation().isEnabled()
                 ? agentConfig.getValidation().getMaxRetries()
                 : 1;
+        int maxFileRequestRounds = 3; // Prevent infinite loops of file requests
 
         // Store initial user message in session
         sessionService.addMessage(session, "user", userMessage);
 
         String currentMessage = userMessage;
         List<AiMessage> conversationHistory = new ArrayList<>();
+        int fileRequestRounds = 0;
 
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
             log.info("Generating implementation for issue #{}, attempt {}/{}", issueNumber, attempt, maxRetries);
@@ -253,10 +256,50 @@ public class IssueImplementationService {
             // Store AI response in session
             sessionService.addMessage(session, "assistant", aiResponse);
 
+            // Post the AI's reasoning as a comment (excluding JSON)
+            postAiThinkingComment(owner, repo, issueNumber, aiResponse);
+
             // Parse AI response
             ImplementationPlan plan = parseAiResponse(aiResponse);
-            if (plan == null || plan.getFileChanges() == null || plan.getFileChanges().isEmpty()) {
+            if (plan == null) {
                 log.warn("Failed to parse implementation plan on attempt {}", attempt);
+                return null;
+            }
+
+            // Handle file requests - AI wants to see more files before implementing
+            if (plan.hasFileRequests() && !plan.hasFileChanges() && fileRequestRounds < maxFileRequestRounds) {
+                fileRequestRounds++;
+                log.info("AI requesting {} additional files (round {}/{})",
+                        plan.getRequestFiles().size(), fileRequestRounds, maxFileRequestRounds);
+
+                // Fetch the requested files
+                String fileContext = fetchSpecificFiles(owner, repo, defaultBranch, plan.getRequestFiles());
+
+                // Build continuation message
+                String filesMessage = "Here are the requested files:\n" + fileContext +
+                        "\n\nNow implement the issue. Output JSON with fileChanges.";
+
+                // Update conversation history for next iteration
+                conversationHistory.add(AiMessage.builder()
+                        .role("user")
+                        .content(currentMessage)
+                        .build());
+                conversationHistory.add(AiMessage.builder()
+                        .role("assistant")
+                        .content(aiResponse)
+                        .build());
+
+                currentMessage = filesMessage;
+                sessionService.addMessage(session, "user", filesMessage);
+
+                // Don't count this as an attempt since it's a file request, not a failed implementation
+                attempt--;
+                continue;
+            }
+
+            // If still no file changes after handling file requests, fail
+            if (!plan.hasFileChanges()) {
+                log.warn("No file changes in implementation plan on attempt {}", attempt);
                 return null;
             }
 
@@ -407,6 +450,9 @@ public class IssueImplementationService {
             // Store AI response in session
             sessionService.addMessage(session, "assistant", aiResponse);
 
+            // Post the AI's reasoning as a comment (excluding JSON)
+            postAiThinkingComment(owner, repo, issueNumber, aiResponse);
+
             // Parse AI response
             ImplementationPlan plan = parseAiResponse(aiResponse);
 
@@ -424,14 +470,14 @@ public class IssueImplementationService {
                         systemPrompt, null, agentConfig.getMaxTokens());
                 sessionService.addMessage(session, "assistant", aiResponse);
 
+                // Post the follow-up AI reasoning as a comment
+                postAiThinkingComment(owner, repo, issueNumber, aiResponse);
+
                 plan = parseAiResponse(aiResponse);
             }
 
             if (plan == null || !plan.hasFileChanges()) {
-                // AI responded but no code changes - post the response as a comment
-                giteaApiClient.postComment(owner, repo, issueNumber,
-                        "🤖 **AI Agent**: " + extractNonJsonResponse(aiResponse),
-                        null);
+                // AI responded but no code changes - the thinking comment was already posted
                 sessionService.setStatus(session, AgentSession.AgentSessionStatus.PR_CREATED);
                 return;
             }
@@ -669,10 +715,48 @@ public class IssueImplementationService {
 
         // If no JSON block, check if it looks like JSON
         if (aiResponse.strip().startsWith("{")) {
-            return "I've analyzed your request but couldn't generate a specific response.";
+            return null; // Pure JSON, no thinking text
         }
 
         return aiResponse;
+    }
+
+    /**
+     * Posts the AI's thinking/reasoning as a comment on the issue, excluding JSON content.
+     * This provides transparency about what the AI is doing.
+     */
+    private void postAiThinkingComment(String owner, String repo, Long issueNumber, String aiResponse) {
+        String thinking = extractNonJsonResponse(aiResponse);
+        if (thinking == null || thinking.isBlank()) {
+            return; // No thinking text to post
+        }
+
+        // Extract summary from the response if available
+        ImplementationPlan plan = parseAiResponse(aiResponse);
+        String summary = (plan != null && plan.getSummary() != null) ? plan.getSummary() : null;
+
+        StringBuilder comment = new StringBuilder();
+        comment.append("🤖 **AI Agent Thinking**:\n\n");
+        comment.append(thinking);
+
+        // Add file request info if present
+        if (plan != null && plan.hasFileRequests()) {
+            comment.append("\n\n📁 **Requesting files**: ");
+            comment.append(String.join(", ", plan.getRequestFiles().stream()
+                    .map(f -> "`" + f + "`")
+                    .toList()));
+        }
+
+        // Add summary if present and different from thinking
+        if (summary != null && !summary.isBlank() && !thinking.contains(summary)) {
+            comment.append("\n\n📝 **Summary**: ").append(summary);
+        }
+
+        try {
+            giteaApiClient.postComment(owner, repo, issueNumber, comment.toString(), null);
+        } catch (Exception e) {
+            log.warn("Failed to post AI thinking comment on issue #{}: {}", issueNumber, e.getMessage());
+        }
     }
 
     String buildTreeContext(List<Map<String, Object>> tree) {

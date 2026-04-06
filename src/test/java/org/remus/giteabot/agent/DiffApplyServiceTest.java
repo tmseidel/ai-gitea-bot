@@ -193,5 +193,193 @@ class DiffApplyServiceTest {
         assertThat(result).contains("line3");
         assertThat(result).doesNotContain("line2");
     }
+
+    @Test
+    void applyDiff_emptySearchBlock_appendsContent() {
+        String original = "existing content";
+
+        String diff = """
+                <<<<<<< SEARCH
+                =======
+                new content
+                >>>>>>> REPLACE
+                """;
+
+        String result = service.applyDiff(original, diff);
+
+        assertThat(result).isEqualTo("existing content\nnew content");
+    }
+
+    @Test
+    void applyDiff_placeholderComment_appendsContent() {
+        String original = "/* some existing CSS */\nbody { margin: 0; }";
+
+        String diff = """
+                <<<<<<< SEARCH
+                /* Add any existing CSS content here */
+                =======
+                .assignee {
+                    font-style: italic;
+                }
+                >>>>>>> REPLACE
+                """;
+
+        String result = service.applyDiff(original, diff);
+
+        assertThat(result).contains("/* some existing CSS */");
+        assertThat(result).contains("body { margin: 0; }");
+        assertThat(result).contains(".assignee {");
+        assertThat(result).contains("font-style: italic;");
+    }
+
+    @Test
+    void applyDiff_placeholderComment_onEmptyFile_replacesContent() {
+        String original = "";
+
+        String diff = """
+                <<<<<<< SEARCH
+                /* Add your code here */
+                =======
+                .new-class { color: red; }
+                >>>>>>> REPLACE
+                """;
+
+        String result = service.applyDiff(original, diff);
+
+        assertThat(result).isEqualTo(".new-class { color: red; }");
+    }
+
+    @Test
+    void applyDiff_placeholderHtmlComment_appendsContent() {
+        String original = "<html><body></body></html>";
+
+        String diff = """
+                <<<<<<< SEARCH
+                <!-- Add existing content here -->
+                =======
+                <div>New content</div>
+                >>>>>>> REPLACE
+                """;
+
+        String result = service.applyDiff(original, diff);
+
+        assertThat(result).contains("<html>");
+        assertThat(result).contains("<div>New content</div>");
+    }
+
+    @Test
+    void applyDiff_placeholderLineComment_appendsContent() {
+        String original = "var x = 1;";
+
+        String diff = """
+                <<<<<<< SEARCH
+                // Add your existing code here
+                =======
+                var y = 2;
+                >>>>>>> REPLACE
+                """;
+
+        String result = service.applyDiff(original, diff);
+
+        assertThat(result).contains("var x = 1;");
+        assertThat(result).contains("var y = 2;");
+    }
+
+    @Test
+    void applyDiff_placeholderHashComment_appendsContent() {
+        String original = "import os";
+
+        String diff = """
+                <<<<<<< SEARCH
+                # Add your existing code here
+                =======
+                import sys
+                >>>>>>> REPLACE
+                """;
+
+        String result = service.applyDiff(original, diff);
+
+        assertThat(result).contains("import os");
+        assertThat(result).contains("import sys");
+    }
+
+    @Test
+    void applyDiff_appendPattern_appendsNewContent() {
+        // Test the CSS append pattern where REPLACE starts with SEARCH
+        String original = """
+                .task-list li.done .task-main {
+                    text-decoration: line-through;
+                    opacity: 0.6;
+                }""";
+
+        String diff = """
+                <<<<<<< SEARCH
+                .task-list li.done .task-main {
+                    text-decoration: line-through;
+                    opacity: 0.6;
+                }
+                =======
+                .task-list li.done .task-main {
+                    text-decoration: line-through;
+                    opacity: 0.6;
+                }
+                
+                .assignee {
+                    display: block;
+                    color: #666;
+                    font-style: italic;
+                    margin-top: 0.25rem;
+                }
+                >>>>>>> REPLACE
+                """;
+
+        String result = service.applyDiff(original, diff);
+
+        assertThat(result).contains(".task-list li.done .task-main");
+        assertThat(result).contains("text-decoration: line-through");
+        assertThat(result).contains(".assignee {");
+        assertThat(result).contains("font-style: italic");
+    }
+
+    @Test
+    void applyDiff_searchNotFoundWithExactContent_appendsViaAppendPattern() {
+        // When AI generates a search block that doesn't exactly match but replace contains search
+        String original = ".existing { margin: 0; }";
+
+        String diff = """
+                <<<<<<< SEARCH
+                .existing { margin: 0; }
+                =======
+                .existing { margin: 0; }
+                
+                .new-class { color: red; }
+                >>>>>>> REPLACE
+                """;
+
+        String result = service.applyDiff(original, diff);
+
+        assertThat(result).contains(".existing { margin: 0; }");
+        assertThat(result).contains(".new-class { color: red; }");
+    }
+
+    @Test
+    void applyDiff_trailingWhitespaceDifference_shouldMatch() {
+        String original = "line1\noriginalLine\nline3";
+
+        String diff = """
+                <<<<<<< SEARCH
+                originalLine
+                =======
+                modified-line
+                >>>>>>> REPLACE
+                """;
+
+        String result = service.applyDiff(original, diff);
+
+        assertThat(result).contains("line1");
+        assertThat(result).contains("modified-line");
+        assertThat(result).contains("line3");
+        assertThat(result).doesNotContain("originalLine");
+    }
 }
 
