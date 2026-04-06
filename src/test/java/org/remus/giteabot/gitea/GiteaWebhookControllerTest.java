@@ -515,15 +515,15 @@ class GiteaWebhookControllerTest {
                     "issue": {
                         "number": 42,
                         "title": "Add feature X",
-                        "body": "Implement feature X"
+                        "body": "Implement feature X",
+                        "assignee": {
+                            "login": "ai_bot"
+                        }
                     },
                     "repository": {
                         "name": "testrepo",
                         "full_name": "testowner/testrepo",
                         "owner": {"login": "testowner"}
-                    },
-                    "assignee": {
-                        "login": "ai_bot"
                     },
                     "sender": {
                         "login": "someuser"

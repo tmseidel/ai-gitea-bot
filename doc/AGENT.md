@@ -14,9 +14,21 @@ sequenceDiagram
     User->>Gitea: Assign bot to issue
     Gitea->>Bot: Webhook (issues, action: assigned)
     Bot->>Gitea: Post "analyzing" comment
-    Bot->>Gitea: Fetch repository tree & files
-    Bot->>AI: Send issue + repo context
+    Bot->>Gitea: Fetch repository tree
+    Bot->>AI: Ask which files are needed
+    AI-->>Bot: List of requested files
+    Bot->>Gitea: Fetch file contents
+    Bot->>AI: Send issue + file context
     AI-->>Bot: Implementation plan (JSON)
+    
+    loop Validation (up to max-retries)
+        Bot->>Bot: Validate code syntax
+        alt Validation fails
+            Bot->>AI: Send error feedback
+            AI-->>Bot: Corrected implementation
+        end
+    end
+    
     Bot->>Gitea: Create feature branch
     Bot->>Gitea: Commit file changes
     Bot->>Gitea: Create pull request
@@ -26,11 +38,13 @@ sequenceDiagram
 1. A user assigns the bot's Gitea user account to an issue
 2. Gitea sends an `issues` webhook with `action: "assigned"`
 3. The bot posts a progress comment on the issue
-4. The bot fetches the repository file tree and relevant file contents
-5. The bot sends the issue description and repository context to the AI provider
-6. The AI responds with a structured implementation plan (JSON with file changes)
-7. The bot creates a feature branch, commits the changes, and opens a pull request
-8. The bot posts a summary comment on the issue linking to the PR
+4. The bot fetches the repository file tree and asks the AI which files are needed
+5. The bot fetches the requested file contents for context
+6. The bot sends the issue description and repository context to the AI provider
+7. The AI responds with a structured implementation plan (JSON with file changes)
+8. **Validation loop**: The bot validates the generated code; if errors are found, they are sent back to the AI for correction (up to max-retries times)
+9. The bot creates a feature branch, commits the changes, and opens a pull request
+10. The bot posts a summary comment on the issue linking to the PR
 
 ## Setup
 
@@ -63,9 +77,38 @@ Ensure the bot user has at minimum **Write** permission on the target repositori
 | Environment Variable | Property | Default | Description |
 |---|---|---|---|
 | `AGENT_ENABLED` | `agent.enabled` | `false` | Enable/disable the agent feature |
-| `AGENT_MAX_FILES` | `agent.max-files` | `10` | Maximum files the agent can modify per issue |
+| `AGENT_MAX_FILES` | `agent.max-files` | `20` | Maximum files the agent can modify per issue |
+| `AGENT_MAX_TOKENS` | `agent.max-tokens` | `32768` | Maximum tokens for AI responses |
 | `AGENT_BRANCH_PREFIX` | `agent.branch-prefix` | `ai-agent/` | Prefix for created branches |
 | `AGENT_ALLOWED_REPOS` | `agent.allowed-repos` | *(empty = all)* | Comma-separated list of `owner/repo` where agent is active |
+| `AGENT_VALIDATION_ENABLED` | `agent.validation.enabled` | `true` | Enable syntax validation before commit |
+| `AGENT_VALIDATION_MAX_RETRIES` | `agent.validation.max-retries` | `3` | Max iterations for error correction |
+| `AGENT_VALIDATION_BUILD_ENABLED` | `agent.validation.build-enabled` | `false` | Enable full build validation (requires cloning) |
+| `AGENT_VALIDATION_BUILD_TIMEOUT` | `agent.validation.build-timeout-seconds` | `300` | Timeout for build commands |
+
+## Code Validation
+
+The agent includes built-in code validation to catch errors before creating pull requests:
+
+### Syntax Validation (Default)
+
+When `agent.validation.enabled=true`, the agent validates generated code syntax before committing:
+
+- **Java files**: Uses the Java Compiler API to detect syntax errors (missing semicolons, unclosed braces, etc.)
+- **JSON/YAML files**: Parses files to validate syntax
+
+If validation fails, the agent automatically sends the errors back to the AI for correction. This "iterative refinement" loop continues up to `max-retries` times.
+
+### Build Validation (Optional)
+
+When `agent.validation.build-enabled=true`, the agent performs full build validation:
+
+1. Clones the repository to a temporary directory
+2. Applies the generated file changes
+3. Runs the build command (`mvn compile` for Maven, `./gradlew compileJava` for Gradle, `npm run build` for Node.js)
+4. Reports build errors back to the AI if compilation fails
+
+**Note**: Build validation requires the build tools to be installed in the bot's environment (Maven, Gradle, or npm).
 
 ### Example Docker Compose
 
@@ -98,8 +141,8 @@ services:
 
 1. **Context window limits**: Large repositories may exceed the AI provider's context window. The agent limits the number of files sent as context and truncates content when necessary.
 2. **Complex multi-file changes**: The agent works best for focused, well-described issues. Very complex issues requiring changes across many files may produce incomplete or incorrect implementations.
-3. **No test execution**: The agent does not run tests or build the project. The generated code should be reviewed and tested by a human.
-4. **Single-turn implementation**: The current implementation generates changes in a single AI call. Future versions may support iterative refinement (plan → implement → review → refine).
+3. **Syntax validation only**: By default, the agent validates Java, JSON, and YAML syntax but does not compile or run the full project. Enable `build-enabled` for full compilation checks.
+4. **Iterative refinement**: The agent can auto-correct syntax errors through iterative AI feedback. After `max-retries` attempts, it will still create the PR with a warning comment if errors persist.
 5. **No dependency management**: The agent cannot add new project dependencies (e.g., Maven/Gradle dependencies).
 
 ## Error Handling

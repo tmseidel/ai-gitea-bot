@@ -56,5 +56,16 @@ public class AgentConfigProperties {
          * If code fails validation, it will be sent back to AI for fixes up to this many times.
          */
         private int maxRetries = 3;
+
+        /**
+         * Whether to run a full build (mvn compile / gradle build) for validation.
+         * This catches more errors but requires cloning the repository.
+         */
+        private boolean buildEnabled = false;
+
+        /**
+         * Timeout in seconds for build commands.
+         */
+        private int buildTimeoutSeconds = 300;
     }
 }

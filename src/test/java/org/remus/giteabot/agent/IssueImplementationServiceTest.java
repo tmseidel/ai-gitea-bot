@@ -7,6 +7,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.remus.giteabot.agent.model.FileChange;
 import org.remus.giteabot.agent.model.ImplementationPlan;
+import org.remus.giteabot.agent.session.AgentSessionService;
+import org.remus.giteabot.agent.validation.BuildValidationService;
+import org.remus.giteabot.agent.validation.CodeValidationService;
 import org.remus.giteabot.ai.AiClient;
 import org.remus.giteabot.config.AgentConfigProperties;
 import org.remus.giteabot.config.PromptService;
@@ -32,6 +35,15 @@ class IssueImplementationServiceTest {
     @Mock
     private PromptService promptService;
 
+    @Mock
+    private AgentSessionService sessionService;
+
+    @Mock
+    private CodeValidationService validationService;
+
+    @Mock
+    private BuildValidationService buildValidationService;
+
     private AgentConfigProperties agentConfig;
 
     private IssueImplementationService service;
@@ -42,7 +54,8 @@ class IssueImplementationServiceTest {
         agentConfig.setEnabled(true);
         agentConfig.setMaxFiles(10);
         agentConfig.setBranchPrefix("ai-agent/");
-        service = new IssueImplementationService(giteaApiClient, aiClient, promptService, agentConfig);
+        service = new IssueImplementationService(giteaApiClient, aiClient, promptService, agentConfig,
+                sessionService, validationService, buildValidationService);
     }
 
     @Test
@@ -211,7 +224,7 @@ class IssueImplementationServiceTest {
                 }
                 ```
                 """;
-        when(aiClient.chat(anyList(), anyString(), anyString(), isNull())).thenReturn(aiResponse);
+        when(aiClient.chat(anyList(), anyString(), anyString(), isNull(), anyInt())).thenReturn(aiResponse);
         when(giteaApiClient.createPullRequest(eq("testowner"), eq("testrepo"), anyString(), anyString(),
                 eq("ai-agent/issue-42"), eq("main"), isNull())).thenReturn(1L);
 
@@ -246,7 +259,7 @@ class IssueImplementationServiceTest {
                 }
                 ```
                 """;
-        when(aiClient.chat(anyList(), anyString(), anyString(), isNull())).thenReturn(aiResponse);
+        when(aiClient.chat(anyList(), anyString(), anyString(), isNull(), anyInt())).thenReturn(aiResponse);
 
         service.handleIssueAssigned(payload);
 
@@ -265,7 +278,7 @@ class IssueImplementationServiceTest {
         when(giteaApiClient.getDefaultBranch("testowner", "testrepo", null)).thenReturn("main");
         when(giteaApiClient.getRepositoryTree("testowner", "testrepo", "main", null)).thenReturn(List.of());
         when(promptService.getSystemPrompt("agent")).thenReturn("You are an agent");
-        when(aiClient.chat(anyList(), anyString(), anyString(), isNull())).thenReturn("I don't know how to do this");
+        when(aiClient.chat(anyList(), anyString(), anyString(), isNull(), anyInt())).thenReturn("I don't know how to do this");
 
         service.handleIssueAssigned(payload);
 
@@ -293,7 +306,7 @@ class IssueImplementationServiceTest {
                 }
                 ```
                 """;
-        when(aiClient.chat(anyList(), anyString(), anyString(), isNull())).thenReturn(aiResponse);
+        when(aiClient.chat(anyList(), anyString(), anyString(), isNull(), anyInt())).thenReturn(aiResponse);
         doNothing().when(giteaApiClient).createBranch(any(), any(), any(), any(), any());
         doThrow(new RuntimeException("API error")).when(giteaApiClient)
                 .createOrUpdateFile(any(), any(), any(), any(), any(), any(), any(), any());
@@ -334,10 +347,14 @@ class IssueImplementationServiceTest {
         WebhookPayload payload = new WebhookPayload();
         payload.setAction("assigned");
 
+        WebhookPayload.Owner assignee = new WebhookPayload.Owner();
+        assignee.setLogin("ai_bot");
+
         WebhookPayload.Issue issue = new WebhookPayload.Issue();
         issue.setNumber(42L);
         issue.setTitle("Add new feature X");
         issue.setBody("Please implement feature X that does Y and Z");
+        issue.setAssignee(assignee);
         payload.setIssue(issue);
 
         WebhookPayload.Owner owner = new WebhookPayload.Owner();
@@ -349,9 +366,6 @@ class IssueImplementationServiceTest {
         repository.setOwner(owner);
         payload.setRepository(repository);
 
-        WebhookPayload.Owner assignee = new WebhookPayload.Owner();
-        assignee.setLogin("ai_bot");
-        payload.setAssignee(assignee);
 
         return payload;
     }

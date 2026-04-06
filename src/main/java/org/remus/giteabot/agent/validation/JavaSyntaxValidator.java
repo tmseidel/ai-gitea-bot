@@ -102,6 +102,17 @@ public class JavaSyntaxValidator implements SyntaxValidator {
         if (message == null) return false;
         String lower = message.toLowerCase();
 
+        // Non-syntax errors we want to ignore first (check these before catching generic "expected")
+        if (lower.contains("cannot find symbol") ||
+            lower.contains("package") && lower.contains("does not exist") ||
+            lower.contains("cannot be applied") ||
+            lower.contains("incompatible types") ||
+            lower.contains("cannot access") ||
+            lower.contains("should be declared in a file named") ||
+            lower.contains("is public, should be declared")) {
+            return false;
+        }
+
         // Syntax errors we want to catch
         if (lower.contains("';' expected") ||
             lower.contains("'(' expected") ||
@@ -112,18 +123,13 @@ public class JavaSyntaxValidator implements SyntaxValidator {
             lower.contains("unclosed") ||
             lower.contains("reached end of file while parsing") ||
             lower.contains("not a statement") ||
-            lower.contains("orphaned") ||
-            lower.contains("expected")) {
+            lower.contains("orphaned")) {
             return true;
         }
 
-        // Dependency errors we want to ignore
-        if (lower.contains("cannot find symbol") ||
-            lower.contains("package") && lower.contains("does not exist") ||
-            lower.contains("cannot be applied") ||
-            lower.contains("incompatible types") ||
-            lower.contains("cannot access")) {
-            return false;
+        // For generic "expected" messages, only report if not already filtered above
+        if (lower.contains("expected")) {
+            return true;
         }
 
         // Default: treat as syntax error to be safe

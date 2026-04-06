@@ -7,6 +7,7 @@ import org.remus.giteabot.agent.model.FileChange;
 import org.remus.giteabot.agent.model.ImplementationPlan;
 import org.remus.giteabot.agent.session.AgentSession;
 import org.remus.giteabot.agent.session.AgentSessionService;
+import org.remus.giteabot.agent.validation.BuildValidationService;
 import org.remus.giteabot.agent.validation.CodeValidationService;
 import org.remus.giteabot.agent.validation.SyntaxValidator;
 import org.remus.giteabot.ai.AiClient;
@@ -36,8 +37,8 @@ public class IssueImplementationService {
     private static final Pattern JSON_BLOCK_PATTERN = Pattern.compile("```json\\s*\\n(.*?)\\n\\s*```", Pattern.DOTALL);
     private static final Pattern JSON_BLOCK_UNCLOSED_PATTERN = Pattern.compile("```json\\s*\\n(\\{.*)", Pattern.DOTALL);
     private static final Pattern JSON_OBJECT_PATTERN = Pattern.compile("(\\{\\s*\"summary\"\\s*:.*)", Pattern.DOTALL);
-    private static final int MAX_FILE_CONTENT_CHARS = 50000;
-    private static final int MAX_TREE_FILES_FOR_CONTEXT = 200;
+    private static final int MAX_FILE_CONTENT_CHARS = 100000;  // Increased for more context
+    private static final int MAX_TREE_FILES_FOR_CONTEXT = 500; // Show more files in tree
 
     private final GiteaApiClient giteaApiClient;
     private final AiClient aiClient;
@@ -45,17 +46,21 @@ public class IssueImplementationService {
     private final AgentConfigProperties agentConfig;
     private final AgentSessionService sessionService;
     private final CodeValidationService validationService;
+    private final BuildValidationService buildValidationService;
     private final ObjectMapper objectMapper;
 
-    public IssueImplementationService(GiteaApiClient giteaApiClient, AiClient aiClient,
-                                      PromptService promptService, AgentConfigProperties agentConfig,
-                                      AgentSessionService sessionService, CodeValidationService validationService) {
+    public IssueImplementationService(GiteaApiClient giteaApiClient,
+                                      AiClient aiClient, PromptService promptService,
+                                      AgentConfigProperties agentConfig, AgentSessionService sessionService,
+                                      CodeValidationService validationService,
+                                      BuildValidationService buildValidationService) {
         this.giteaApiClient = giteaApiClient;
         this.aiClient = aiClient;
         this.promptService = promptService;
         this.agentConfig = agentConfig;
         this.sessionService = sessionService;
         this.validationService = validationService;
+        this.buildValidationService = buildValidationService;
         this.objectMapper = new ObjectMapper();
     }
 
@@ -84,29 +89,43 @@ public class IssueImplementationService {
         try {
             // Post initial progress comment
             giteaApiClient.postComment(owner, repo, issueNumber,
-                    "🤖 **AI Agent**: I've been assigned to this issue. Analyzing requirements and starting implementation...",
+                    "🤖 **AI Agent**: I've been assigned to this issue. Analyzing repository structure...",
                     null);
 
             // Get default branch
             String defaultBranch = giteaApiClient.getDefaultBranch(owner, repo, null);
             log.info("Default branch for {}: {}", repoFullName, defaultBranch);
 
-            // Fetch repository tree for context
+            // Fetch repository tree
             List<Map<String, Object>> tree = giteaApiClient.getRepositoryTree(owner, repo, defaultBranch, null);
             String treeContext = buildTreeContext(tree);
-
-            // Fetch relevant file contents for context
-            String fileContext = fetchRelevantFileContents(owner, repo, defaultBranch, tree, issueTitle, issueBody);
-
-            // Build AI prompt
-            String userMessage = buildImplementationPrompt(issueTitle, issueBody, treeContext, fileContext);
 
             // Get system prompt for agent
             String systemPrompt = promptService.getSystemPrompt(AGENT_PROMPT_NAME);
 
+            // STEP 1: Ask AI which files it needs
+            log.info("Step 1: Asking AI which files are needed for issue #{}", issueNumber);
+            String fileRequestPrompt = buildFileRequestPrompt(issueTitle, issueBody, treeContext);
+            sessionService.addMessage(session, "user", fileRequestPrompt);
+
+            String fileRequestResponse = aiClient.chat(new ArrayList<>(), fileRequestPrompt, systemPrompt, null,
+                    agentConfig.getMaxTokens());
+            sessionService.addMessage(session, "assistant", fileRequestResponse);
+
+            // Parse requested files
+            List<String> requestedFiles = parseRequestedFiles(fileRequestResponse, tree);
+            log.info("AI requested {} files for context", requestedFiles.size());
+
+            // Fetch requested file contents
+            String fileContext = fetchSpecificFiles(owner, repo, defaultBranch, requestedFiles);
+
+            // STEP 2: Generate implementation with file context
+            log.info("Step 2: Generating implementation for issue #{}", issueNumber);
+            String implementationPrompt = buildImplementationPromptWithContext(issueTitle, issueBody, treeContext, fileContext);
+
             // Generate implementation with validation and iterative correction
             ImplementationPlan plan = generateValidatedImplementation(
-                    session, userMessage, systemPrompt, owner, repo, issueNumber);
+                    session, implementationPrompt, systemPrompt, owner, repo, issueNumber, defaultBranch);
 
             if (plan == null || plan.getFileChanges() == null || plan.getFileChanges().isEmpty()) {
                 sessionService.setStatus(session, AgentSession.AgentSessionStatus.FAILED);
@@ -222,7 +241,7 @@ public class IssueImplementationService {
      */
     private ImplementationPlan generateValidatedImplementation(
             AgentSession session, String userMessage, String systemPrompt,
-            String owner, String repo, Long issueNumber) {
+            String owner, String repo, Long issueNumber, String defaultBranch) {
 
         int maxRetries = agentConfig.getValidation().isEnabled()
                 ? agentConfig.getValidation().getMaxRetries()
@@ -256,27 +275,45 @@ public class IssueImplementationService {
                 return plan;
             }
 
-            // Validate the generated code
-            List<SyntaxValidator.ValidationError> errors = validationService.validateAll(plan.getFileChanges());
+            // VALIDATION: Try build validation first, fall back to syntax validation
+            String validationErrors = null;
 
-            if (errors.isEmpty()) {
+            if (agentConfig.getValidation().isBuildEnabled()) {
+                // Build validation - catches more errors
+                BuildValidationService.BuildResult buildResult = buildValidationService.validateWithBuild(
+                        owner, repo, defaultBranch, plan.getFileChanges());
+
+                if (!buildResult.success()) {
+                    validationErrors = buildResult.getErrorSummary();
+                    log.info("Build validation failed on attempt {}: {}", attempt, buildResult.message());
+                }
+            } else {
+                // Syntax validation only
+                List<SyntaxValidator.ValidationError> errors = validationService.validateAll(plan.getFileChanges());
+                if (!errors.isEmpty()) {
+                    validationErrors = validationService.buildErrorReport(errors);
+                    log.info("Syntax validation found {} error(s) on attempt {}/{}", errors.size(), attempt, maxRetries);
+                }
+            }
+
+            if (validationErrors == null) {
                 log.info("Generated code passed validation on attempt {}", attempt);
                 return plan;
             }
 
-            log.info("Validation found {} error(s) on attempt {}/{}", errors.size(), attempt, maxRetries);
-
             // If this was the last attempt, post a warning but still return the plan
             if (attempt >= maxRetries) {
-                log.warn("Max validation retries reached, proceeding with code that has {} error(s)", errors.size());
+                log.warn("Max validation retries reached, proceeding with code that has errors");
 
                 // Notify user about validation issues
                 String warningComment = String.format(
-                        "⚠️ **AI Agent**: The generated code has %d syntax error(s) that couldn't be " +
+                        "⚠️ **AI Agent**: The generated code has errors that couldn't be " +
                         "automatically fixed after %d attempt(s).\n\n" +
-                        "%s\n" +
+                        "```\n%s\n```\n" +
                         "The code will still be committed for review, but may require manual fixes.",
-                        errors.size(), maxRetries, validationService.buildErrorReport(errors));
+                        maxRetries, validationErrors.length() > 2000
+                                ? validationErrors.substring(0, 2000) + "..."
+                                : validationErrors);
 
                 try {
                     giteaApiClient.postComment(owner, repo, issueNumber, warningComment, null);
@@ -288,7 +325,7 @@ public class IssueImplementationService {
             }
 
             // Build error feedback for the AI
-            String errorFeedback = buildValidationErrorFeedback(plan, errors);
+            String errorFeedback = buildValidationErrorFeedback(validationErrors);
 
             // Update conversation for next iteration
             conversationHistory.add(AiMessage.builder()
@@ -310,34 +347,14 @@ public class IssueImplementationService {
     /**
      * Builds an error feedback message for the AI to fix validation errors.
      */
-    private String buildValidationErrorFeedback(ImplementationPlan plan,
-                                                 List<SyntaxValidator.ValidationError> errors) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("## Syntax Validation Failed\n\n");
-        sb.append("The code you generated has the following syntax errors:\n\n");
-
-        // Group errors by file
-        errors.stream()
-                .collect(Collectors.groupingBy(SyntaxValidator.ValidationError::filePath))
-                .forEach((filePath, fileErrors) -> {
-                    sb.append("### `").append(filePath).append("`\n\n");
-                    for (SyntaxValidator.ValidationError error : fileErrors) {
-                        if (error.line() > 0) {
-                            sb.append("- Line ").append(error.line()).append(": ");
-                        } else {
-                            sb.append("- ");
-                        }
-                        sb.append(error.message()).append("\n");
-                    }
-                    sb.append("\n");
-                });
-
-        sb.append("## Instructions\n\n");
-        sb.append("Please fix these syntax errors and regenerate the complete file contents. ");
-        sb.append("Output your response as a JSON object with the same structure as before, ");
-        sb.append("including the corrected file contents.\n");
-
-        return sb.toString();
+    private String buildValidationErrorFeedback(String errors) {
+        return String.format("""
+                ## Validation Failed
+                ```
+                %s
+                ```
+                Fix the errors. Output corrected JSON with complete file contents.
+                """, errors);
     }
 
     /**
@@ -380,15 +397,8 @@ public class IssueImplementationService {
             String defaultBranch = giteaApiClient.getDefaultBranch(owner, repo, null);
             String workingBranch = branchName != null ? branchName : defaultBranch;
 
-            // Fetch current repository state for context
-            List<Map<String, Object>> tree = giteaApiClient.getRepositoryTree(owner, repo, workingBranch, null);
-            String treeContext = buildTreeContext(tree);
-
-            // Build context about previous changes
-            String fileChangesSummary = sessionService.buildFileChangesSummary(session);
-
-            // Build user message
-            String userMessage = buildContinuationPrompt(commentBody, fileChangesSummary, treeContext, session);
+            // Build user message - AI already has context from conversation history
+            String userMessage = buildContinuationPrompt(commentBody);
 
             // Store user message in session
             sessionService.addMessage(session, "user", userMessage);
@@ -498,32 +508,126 @@ public class IssueImplementationService {
         }
     }
 
-    private String buildContinuationPrompt(String userComment, String fileChangesSummary,
-                                           String treeContext, AgentSession session) {
+    /**
+     * Builds a prompt asking the AI which files it needs to see for the task.
+     */
+    private String buildFileRequestPrompt(String issueTitle, String issueBody, String treeContext) {
         return String.format("""
-                ## Follow-up Request
+                ## Issue
+                **Title**: %s
+                **Description**: %s
                 
-                The user has provided the following feedback/request:
-                
+                ## Repository Files
                 %s
                 
-                ## Previous Work Done
+                Which files do you need to see? Output JSON:
+                ```json
+                {"reasoning": "...", "requestedFiles": ["path/file1", "path/file2"]}
+                ```
+                Request max 20 files (files to modify, related interfaces/DTOs, configs).
+                """, issueTitle, issueBody != null ? issueBody : "(none)", treeContext);
+    }
+
+    /**
+     * Parses the AI's response for requested files.
+     */
+    private List<String> parseRequestedFiles(String aiResponse, List<Map<String, Object>> tree) {
+        List<String> requestedFiles = new ArrayList<>();
+
+        // Build set of valid paths
+        java.util.Set<String> validPaths = new java.util.HashSet<>();
+        for (Map<String, Object> entry : tree) {
+            String path = (String) entry.getOrDefault("path", "");
+            String type = (String) entry.getOrDefault("type", "blob");
+            if ("blob".equals(type)) {
+                validPaths.add(path);
+            }
+        }
+
+        // Try to extract JSON from response
+        String jsonStr = extractJsonFromResponse(aiResponse);
+        if (jsonStr != null) {
+            try {
+                FileRequestResponse response = objectMapper.readValue(jsonStr, FileRequestResponse.class);
+                if (response != null && response.getRequestedFiles() != null) {
+                    for (String file : response.getRequestedFiles()) {
+                        if (validPaths.contains(file)) {
+                            requestedFiles.add(file);
+                        } else {
+                            log.debug("Requested file not found in tree: {}", file);
+                        }
+                    }
+                }
+            } catch (JacksonException e) {
+                log.warn("Failed to parse file request response: {}", e.getMessage());
+            }
+        }
+
+        // If parsing failed, fall back to pattern matching
+        if (requestedFiles.isEmpty()) {
+            for (String path : validPaths) {
+                if (aiResponse.contains(path)) {
+                    requestedFiles.add(path);
+                }
+            }
+        }
+
+        // Limit to 30 files
+        if (requestedFiles.size() > 30) {
+            requestedFiles = requestedFiles.subList(0, 30);
+        }
+
+        return requestedFiles;
+    }
+
+    /**
+     * Fetches specific file contents from the repository.
+     */
+    private String fetchSpecificFiles(String owner, String repo, String ref, List<String> filePaths) {
+        StringBuilder sb = new StringBuilder();
+        int totalChars = 0;
+
+        for (String path : filePaths) {
+            if (totalChars > MAX_FILE_CONTENT_CHARS) {
+                sb.append("\n(File context truncated due to size limits)\n");
+                break;
+            }
+            try {
+                String content = giteaApiClient.getFileContent(owner, repo, path, ref, null);
+                if (content != null && !content.isEmpty()) {
+                    sb.append("\n--- File: ").append(path).append(" ---\n");
+                    sb.append(content).append("\n");
+                    totalChars += content.length();
+                }
+            } catch (Exception e) {
+                log.debug("Could not fetch file content for {}: {}", path, e.getMessage());
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Builds the implementation prompt with the file context provided.
+     */
+    private String buildImplementationPromptWithContext(String issueTitle, String issueBody,
+                                                         String treeContext, String fileContext) {
+        return String.format("""
+                ## Issue
+                **Title**: %s
+                **Description**: %s
                 
+                ## Repository
                 %s
                 
-                ## Current Repository State
-                
+                ## File Contents
                 %s
                 
-                ## Instructions
-                
-                Please analyze the user's request and generate any necessary code changes. 
-                If code changes are needed, output your response as a JSON object with the structure 
-                described in the system prompt.
-                
-                If no code changes are needed (e.g., the user is just asking a question), 
-                respond naturally without JSON.
-                """, userComment, fileChangesSummary, treeContext);
+                Implement the issue. Output JSON per system prompt format.
+                """, issueTitle, issueBody != null ? issueBody : "(none)", treeContext, fileContext);
+    }
+
+    private String buildContinuationPrompt(String userComment) {
+        return userComment;
     }
 
     private String extractNonJsonResponse(String aiResponse) {
@@ -689,30 +793,6 @@ public class IssueImplementationService {
         return null;
     }
 
-    private String buildImplementationPrompt(String issueTitle, String issueBody,
-                                             String treeContext, String fileContext) {
-        return String.format("""
-                ## Issue to Implement
-                
-                **Title**: %s
-                
-                **Description**:
-                %s
-                
-                ## Repository Context
-                
-                %s
-                
-                ## Relevant File Contents
-                
-                %s
-                
-                ## Instructions
-                
-                Please analyze the issue and generate the implementation. Output your response as a JSON \
-                object with the structure described in the system prompt.
-                """, issueTitle, issueBody != null ? issueBody : "(no description)", treeContext, fileContext);
-    }
 
     ImplementationPlan parseAiResponse(String aiResponse) {
         if (aiResponse == null || aiResponse.isBlank()) {
@@ -915,5 +995,12 @@ public class IssueImplementationService {
         private String path;
         private String operation;
         private String content;
+    }
+
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    static class FileRequestResponse {
+        private String reasoning;
+        private List<String> requestedFiles;
     }
 }
