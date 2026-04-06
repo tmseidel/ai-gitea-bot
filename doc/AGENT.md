@@ -110,6 +110,37 @@ When `agent.validation.build-enabled=true`, the agent performs full build valida
 
 **Note**: Build validation requires the build tools to be installed in the bot's environment (Maven, Gradle, or npm).
 
+## Token Optimization
+
+The agent includes features to reduce token usage:
+
+### Diff-Based Updates
+
+Instead of sending complete file contents for every UPDATE operation, the AI can use SEARCH/REPLACE diff blocks:
+
+```
+<<<<<<< SEARCH
+old code to find
+=======
+new replacement code
+>>>>>>> REPLACE
+```
+
+This significantly reduces token usage for small changes to large files.
+
+### Dynamic File Requests
+
+In follow-up conversations, the AI can request additional files it needs:
+
+```json
+{
+  "summary": "Need more context",
+  "requestFiles": ["src/Interface.java", "src/Config.java"]
+}
+```
+
+The bot fetches these files and continues the conversation, avoiding the need to send all files upfront.
+
 ### Example Docker Compose
 
 ```yaml

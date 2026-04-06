@@ -44,6 +44,9 @@ class IssueImplementationServiceTest {
     @Mock
     private BuildValidationService buildValidationService;
 
+    @Mock
+    private DiffApplyService diffApplyService;
+
     private AgentConfigProperties agentConfig;
 
     private IssueImplementationService service;
@@ -55,7 +58,7 @@ class IssueImplementationServiceTest {
         agentConfig.setMaxFiles(10);
         agentConfig.setBranchPrefix("ai-agent/");
         service = new IssueImplementationService(giteaApiClient, aiClient, promptService, agentConfig,
-                sessionService, validationService, buildValidationService);
+                sessionService, validationService, buildValidationService, diffApplyService);
     }
 
     @Test
@@ -137,7 +140,7 @@ class IssueImplementationServiceTest {
     }
 
     @Test
-    void parseAiResponse_noFileChanges_returnsNull() {
+    void parseAiResponse_noFileChanges_returnsPlanWithEmptyChanges() {
         String aiResponse = """
                 ```json
                 {
@@ -148,7 +151,54 @@ class IssueImplementationServiceTest {
 
         ImplementationPlan plan = service.parseAiResponse(aiResponse);
 
-        assertThat(plan).isNull();
+        // Plan is returned but with no file changes (valid for file requests)
+        assertThat(plan).isNotNull();
+        assertThat(plan.getSummary()).isEqualTo("Nothing to do");
+        assertThat(plan.hasFileChanges()).isFalse();
+    }
+
+    @Test
+    void parseAiResponse_withRequestFiles_returnsPlan() {
+        String aiResponse = """
+                ```json
+                {
+                  "summary": "Need more context",
+                  "requestFiles": ["src/Main.java", "pom.xml"]
+                }
+                ```
+                """;
+
+        ImplementationPlan plan = service.parseAiResponse(aiResponse);
+
+        assertThat(plan).isNotNull();
+        assertThat(plan.hasFileRequests()).isTrue();
+        assertThat(plan.getRequestFiles()).containsExactly("src/Main.java", "pom.xml");
+        assertThat(plan.hasFileChanges()).isFalse();
+    }
+
+    @Test
+    void parseAiResponse_withDiff_returnsPlan() {
+        String aiResponse = """
+                ```json
+                {
+                  "summary": "Updated file",
+                  "fileChanges": [
+                    {
+                      "path": "src/Test.java",
+                      "operation": "UPDATE",
+                      "diff": "<<<<<<< SEARCH\\nold\\n=======\\nnew\\n>>>>>>> REPLACE"
+                    }
+                  ]
+                }
+                ```
+                """;
+
+        ImplementationPlan plan = service.parseAiResponse(aiResponse);
+
+        assertThat(plan).isNotNull();
+        assertThat(plan.getFileChanges()).hasSize(1);
+        assertThat(plan.getFileChanges().get(0).isDiffBased()).isTrue();
+        assertThat(plan.getFileChanges().get(0).getDiff()).contains("SEARCH");
     }
 
     @Test

@@ -47,13 +47,15 @@ public class IssueImplementationService {
     private final AgentSessionService sessionService;
     private final CodeValidationService validationService;
     private final BuildValidationService buildValidationService;
+    private final DiffApplyService diffApplyService;
     private final ObjectMapper objectMapper;
 
     public IssueImplementationService(GiteaApiClient giteaApiClient,
                                       AiClient aiClient, PromptService promptService,
                                       AgentConfigProperties agentConfig, AgentSessionService sessionService,
                                       CodeValidationService validationService,
-                                      BuildValidationService buildValidationService) {
+                                      BuildValidationService buildValidationService,
+                                      DiffApplyService diffApplyService) {
         this.giteaApiClient = giteaApiClient;
         this.aiClient = aiClient;
         this.promptService = promptService;
@@ -61,6 +63,7 @@ public class IssueImplementationService {
         this.sessionService = sessionService;
         this.validationService = validationService;
         this.buildValidationService = buildValidationService;
+        this.diffApplyService = diffApplyService;
         this.objectMapper = new ObjectMapper();
     }
 
@@ -161,20 +164,7 @@ public class IssueImplementationService {
                 String commitMessage = String.format("agent: %s %s (issue #%d)",
                         change.getOperation().name().toLowerCase(), change.getPath(), issueNumber);
 
-                switch (change.getOperation()) {
-                    case CREATE -> giteaApiClient.createOrUpdateFile(owner, repo, change.getPath(),
-                            change.getContent(), commitMessage, branchName, null, null);
-                    case UPDATE -> {
-                        String sha = giteaApiClient.getFileSha(owner, repo, change.getPath(), branchName, null);
-                        giteaApiClient.createOrUpdateFile(owner, repo, change.getPath(),
-                                change.getContent(), commitMessage, branchName, sha, null);
-                    }
-                    case DELETE -> {
-                        String sha = giteaApiClient.getFileSha(owner, repo, change.getPath(), branchName, null);
-                        giteaApiClient.deleteFile(owner, repo, change.getPath(),
-                                commitMessage, branchName, sha, null);
-                    }
-                }
+                applyFileChange(owner, repo, branchName, change, commitMessage);
 
                 // Record file change in session
                 sessionService.addFileChange(session, change.getPath(), change.getOperation().name(), null);
@@ -419,7 +409,25 @@ public class IssueImplementationService {
 
             // Parse AI response
             ImplementationPlan plan = parseAiResponse(aiResponse);
-            if (plan == null || plan.getFileChanges() == null || plan.getFileChanges().isEmpty()) {
+
+            // Handle file requests - AI wants to see more files
+            if (plan != null && plan.hasFileRequests()) {
+                log.info("AI requesting {} additional files", plan.getRequestFiles().size());
+                String fileContext = fetchSpecificFiles(owner, repo, workingBranch, plan.getRequestFiles());
+
+                // Send files and ask AI to continue
+                String filesMessage = "Here are the requested files:\n" + fileContext + "\n\nPlease continue.";
+                sessionService.addMessage(session, "user", filesMessage);
+
+                List<AiMessage> updatedHistory = sessionService.toAiMessages(session);
+                aiResponse = aiClient.chat(updatedHistory.subList(0, updatedHistory.size() - 1), filesMessage,
+                        systemPrompt, null, agentConfig.getMaxTokens());
+                sessionService.addMessage(session, "assistant", aiResponse);
+
+                plan = parseAiResponse(aiResponse);
+            }
+
+            if (plan == null || !plan.hasFileChanges()) {
                 // AI responded but no code changes - post the response as a comment
                 giteaApiClient.postComment(owner, repo, issueNumber,
                         "🤖 **AI Agent**: " + extractNonJsonResponse(aiResponse),
@@ -440,20 +448,7 @@ public class IssueImplementationService {
                 String commitMessage = String.format("agent: %s %s (issue #%d, follow-up)",
                         change.getOperation().name().toLowerCase(), change.getPath(), issueNumber);
 
-                switch (change.getOperation()) {
-                    case CREATE -> giteaApiClient.createOrUpdateFile(owner, repo, change.getPath(),
-                            change.getContent(), commitMessage, branchName, null, null);
-                    case UPDATE -> {
-                        String sha = giteaApiClient.getFileSha(owner, repo, change.getPath(), branchName, null);
-                        giteaApiClient.createOrUpdateFile(owner, repo, change.getPath(),
-                                change.getContent(), commitMessage, branchName, sha, null);
-                    }
-                    case DELETE -> {
-                        String sha = giteaApiClient.getFileSha(owner, repo, change.getPath(), branchName, null);
-                        giteaApiClient.deleteFile(owner, repo, change.getPath(),
-                                commitMessage, branchName, sha, null);
-                    }
-                }
+                applyFileChange(owner, repo, branchName, change, commitMessage);
 
                 // Record file change in session
                 sessionService.addFileChange(session, change.getPath(), change.getOperation().name(), null);
@@ -604,6 +599,41 @@ public class IssueImplementationService {
             }
         }
         return sb.toString();
+    }
+
+    /**
+     * Applies a single file change, supporting both diff-based and full content changes.
+     */
+    private void applyFileChange(String owner, String repo, String branchName,
+                                  FileChange change, String commitMessage) {
+        switch (change.getOperation()) {
+            case CREATE -> giteaApiClient.createOrUpdateFile(owner, repo, change.getPath(),
+                    change.getContent(), commitMessage, branchName, null, null);
+            case UPDATE -> {
+                String sha = giteaApiClient.getFileSha(owner, repo, change.getPath(), branchName, null);
+                String newContent;
+
+                if (change.isDiffBased()) {
+                    // Apply diff to existing content
+                    String originalContent = giteaApiClient.getFileContent(owner, repo,
+                            change.getPath(), branchName, null);
+                    newContent = diffApplyService.applyDiff(originalContent, change.getDiff());
+                    log.debug("Applied diff to {}: {} chars -> {} chars",
+                            change.getPath(), originalContent.length(), newContent.length());
+                } else {
+                    // Full content replacement
+                    newContent = change.getContent();
+                }
+
+                giteaApiClient.createOrUpdateFile(owner, repo, change.getPath(),
+                        newContent, commitMessage, branchName, sha, null);
+            }
+            case DELETE -> {
+                String sha = giteaApiClient.getFileSha(owner, repo, change.getPath(), branchName, null);
+                giteaApiClient.deleteFile(owner, repo, change.getPath(),
+                        commitMessage, branchName, sha, null);
+            }
+        }
     }
 
     /**
@@ -811,21 +841,30 @@ public class IssueImplementationService {
 
         try {
             AiImplementationResponse response = objectMapper.readValue(jsonStr, AiImplementationResponse.class);
-            if (response == null || response.getFileChanges() == null) {
-                log.warn("Parsed AI response has no file changes");
+            if (response == null) {
+                log.warn("Parsed AI response is null");
                 return null;
             }
 
-            List<FileChange> fileChanges = response.getFileChanges().stream()
-                    .map(fc -> FileChange.builder()
-                            .path(fc.getPath())
-                            .content(fc.getContent() != null ? fc.getContent() : "")
-                            .operation(parseOperation(fc.getOperation()))
-                            .build())
-                    .toList();
+            // Check if AI is requesting more files
+            List<String> requestFiles = response.getRequestFiles();
+
+            // Parse file changes if present
+            List<FileChange> fileChanges = new ArrayList<>();
+            if (response.getFileChanges() != null) {
+                fileChanges = response.getFileChanges().stream()
+                        .map(fc -> FileChange.builder()
+                                .path(fc.getPath())
+                                .content(fc.getContent() != null ? fc.getContent() : "")
+                                .diff(fc.getDiff())
+                                .operation(parseOperation(fc.getOperation()))
+                                .build())
+                        .toList();
+            }
 
             return ImplementationPlan.builder()
                     .summary(response.getSummary())
+                    .requestFiles(requestFiles)
                     .fileChanges(fileChanges)
                     .build();
         } catch (JacksonException e) {
@@ -986,6 +1025,7 @@ public class IssueImplementationService {
     @JsonIgnoreProperties(ignoreUnknown = true)
     static class AiImplementationResponse {
         private String summary;
+        private List<String> requestFiles;  // Files the AI wants to see
         private List<AiFileChange> fileChanges;
     }
 
@@ -994,7 +1034,8 @@ public class IssueImplementationService {
     static class AiFileChange {
         private String path;
         private String operation;
-        private String content;
+        private String content;  // Full content (for CREATE or full UPDATE)
+        private String diff;     // Diff for UPDATE (preferred over content)
     }
 
     @Data

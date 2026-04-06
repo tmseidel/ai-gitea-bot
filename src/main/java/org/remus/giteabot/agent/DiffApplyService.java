@@ -1,0 +1,161 @@
+package org.remus.giteabot.agent;
+
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * Applies search/replace diffs to file content.
+ * Supports a simple diff format with SEARCH/REPLACE blocks.
+ */
+@Slf4j
+@Service
+public class DiffApplyService {
+
+    // Pattern to match SEARCH/REPLACE blocks
+    private static final Pattern DIFF_BLOCK_PATTERN = Pattern.compile(
+            "<<<<<<< SEARCH\\s*\\n(.*?)=======\\s*\\n(.*?)>>>>>>> REPLACE",
+            Pattern.DOTALL
+    );
+
+    /**
+     * Applies a diff to the original file content.
+     *
+     * @param originalContent the original file content
+     * @param diff            the diff containing SEARCH/REPLACE blocks
+     * @return the modified content
+     * @throws DiffApplyException if a search block cannot be found
+     */
+    public String applyDiff(String originalContent, String diff) {
+        if (diff == null || diff.isBlank()) {
+            return originalContent;
+        }
+
+        List<SearchReplace> blocks = parseDiffBlocks(diff);
+        if (blocks.isEmpty()) {
+            log.warn("No valid SEARCH/REPLACE blocks found in diff");
+            return originalContent;
+        }
+
+        String result = originalContent;
+        for (SearchReplace block : blocks) {
+            result = applyBlock(result, block);
+        }
+
+        return result;
+    }
+
+    /**
+     * Parses SEARCH/REPLACE blocks from the diff.
+     */
+    List<SearchReplace> parseDiffBlocks(String diff) {
+        List<SearchReplace> blocks = new ArrayList<>();
+        Matcher matcher = DIFF_BLOCK_PATTERN.matcher(diff);
+
+        while (matcher.find()) {
+            String search = matcher.group(1);
+            String replace = matcher.group(2);
+
+            // Trim trailing newline from search/replace if present
+            if (search.endsWith("\n")) {
+                search = search.substring(0, search.length() - 1);
+            }
+            if (replace.endsWith("\n")) {
+                replace = replace.substring(0, replace.length() - 1);
+            }
+
+            blocks.add(new SearchReplace(search, replace));
+        }
+
+        return blocks;
+    }
+
+    /**
+     * Applies a single search/replace block.
+     */
+    private String applyBlock(String content, SearchReplace block) {
+        String search = block.search();
+        String replace = block.replace();
+
+        // Try exact match first
+        if (content.contains(search)) {
+            return content.replace(search, replace);
+        }
+
+        // Try with normalized whitespace (trim lines)
+        String normalizedSearch = normalizeWhitespace(search);
+        String[] lines = content.split("\n", -1);
+        StringBuilder result = new StringBuilder();
+        boolean found = false;
+
+        for (int i = 0; i < lines.length; i++) {
+            if (!found && matchesNormalized(content, i, search, normalizedSearch)) {
+                // Found the start of the search block
+                int searchLines = search.split("\n", -1).length;
+                result.append(replace);
+                i += searchLines - 1; // Skip the matched lines
+                found = true;
+                if (i < lines.length - 1) {
+                    result.append("\n");
+                }
+            } else {
+                result.append(lines[i]);
+                if (i < lines.length - 1) {
+                    result.append("\n");
+                }
+            }
+        }
+
+        if (!found) {
+            log.warn("Could not find search block in file. Search text (first 100 chars): {}",
+                    search.length() > 100 ? search.substring(0, 100) + "..." : search);
+            throw new DiffApplyException("Search block not found in file content");
+        }
+
+        return result.toString();
+    }
+
+    private boolean matchesNormalized(String content, int startLine, String search, String normalizedSearch) {
+        String[] contentLines = content.split("\n", -1);
+        String[] searchLines = search.split("\n", -1);
+
+        if (startLine + searchLines.length > contentLines.length) {
+            return false;
+        }
+
+        StringBuilder contentBlock = new StringBuilder();
+        for (int i = 0; i < searchLines.length; i++) {
+            contentBlock.append(contentLines[startLine + i].trim());
+            if (i < searchLines.length - 1) {
+                contentBlock.append("\n");
+            }
+        }
+
+        return contentBlock.toString().equals(normalizedSearch);
+    }
+
+    private String normalizeWhitespace(String text) {
+        String[] lines = text.split("\n", -1);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < lines.length; i++) {
+            sb.append(lines[i].trim());
+            if (i < lines.length - 1) {
+                sb.append("\n");
+            }
+        }
+        return sb.toString();
+    }
+
+    record SearchReplace(String search, String replace) {}
+
+    public static class DiffApplyException extends RuntimeException {
+        public DiffApplyException(String message) {
+            super(message);
+        }
+    }
+}
+
