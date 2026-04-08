@@ -4,7 +4,7 @@ import java.util.List;
 
 /**
  * Provider-agnostic interface for AI-powered code review.
- * Implementations exist for Anthropic, OpenAI, and Ollama.
+ * Implementations exist for Anthropic, OpenAI, Ollama, and llama.cpp.
  */
 public interface AiClient {
 

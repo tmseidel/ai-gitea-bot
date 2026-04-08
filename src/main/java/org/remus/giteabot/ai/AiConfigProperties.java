@@ -54,6 +54,11 @@ public class AiConfigProperties {
      */
     private OllamaConfig ollama = new OllamaConfig();
 
+    /**
+     * llama.cpp server-specific configuration.
+     */
+    private LlamaCppConfig llamacpp = new LlamaCppConfig();
+
     @Data
     public static class AnthropicConfig {
         private String apiUrl = "https://api.anthropic.com";
@@ -70,5 +75,14 @@ public class AiConfigProperties {
     @Data
     public static class OllamaConfig {
         private String apiUrl = "http://localhost:11434";
+    }
+
+    @Data
+    public static class LlamaCppConfig {
+        /**
+         * Base URL for the llama.cpp server API.
+         * Default port 8081 to avoid conflict with the bot's default port 8080.
+         */
+        private String apiUrl = "http://localhost:8081";
     }
 }

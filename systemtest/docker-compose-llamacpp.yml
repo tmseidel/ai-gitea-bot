@@ -1,0 +1,71 @@
+# Docker Compose for llama.cpp server with Qwen2.5-Coder 7B Instruct
+#
+# Usage:
+#   docker compose -f systemtest/docker-compose-llamacpp.yml up -d
+#
+# The llama.cpp server exposes an OpenAI-compatible API at http://localhost:8081
+# Configure the bot with:
+#   AI_PROVIDER=llamacpp
+#   AI_MODEL=qwen2.5-coder-7b-instruct
+#   AI_LLAMACPP_API_URL=http://localhost:8081  (or http://llamacpp:8081 from another container)
+#
+# Model download happens automatically on first start (~5GB for Q4_K_M quantization)
+
+services:
+
+  llamacpp:
+    # Official llama.cpp server image from GitHub Container Registry
+    # For GPU (CUDA): use ghcr.io/ggml-org/llama.cpp:server-cuda13
+    # For CPU only: use ghcr.io/ggml-org/llama.cpp:server
+    image: ghcr.io/ggml-org/llama.cpp:server
+    ports:
+      - "8081:8081"
+    volumes:
+      - llamacpp_models:/models
+    command: >
+      --host 0.0.0.0
+      --port 8081
+      --model /models/qwen2.5-coder-7b-instruct-q4_k_m.gguf
+      --ctx-size 4096
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8081/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s
+      retries: 5
+    restart: unless-stopped
+    depends_on:
+      model-downloader:
+        condition: service_completed_successfully
+    # Uncomment below for GPU acceleration (also change image to server-cuda13)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # Model downloader - runs once to download the model file
+  model-downloader:
+    image: alpine:latest
+    volumes:
+      - llamacpp_models:/models
+    command:
+      - /bin/sh
+      - -c
+      - |
+        if [ ! -f /models/qwen2.5-coder-7b-instruct-q4_k_m.gguf ]; then
+          echo "Downloading Qwen2.5-Coder 7B Instruct Q4_K_M (~5GB)..."
+          apk add --no-cache curl
+          curl -L -o /models/qwen2.5-coder-7b-instruct-q4_k_m.gguf \
+            "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/qwen2.5-coder-7b-instruct-q4_k_m.gguf"
+          echo "Download complete!"
+        else
+          echo "Model already exists, skipping download."
+        fi
+    depends_on: []
+
+volumes:
+  llamacpp_models:
+
