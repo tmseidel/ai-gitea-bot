@@ -36,19 +36,17 @@ graph TD
         PromptService["PromptService<br/><i>Prompt resolution</i>"]
         GiteaClient["GiteaApiClient<br/><i>Gitea REST calls</i>"]
 
-        subgraph "AI Abstraction Layer"
+        subgraph "AI Abstraction Layer (Spring AI)"
             AiInterface["AiClient<br/><i>Interface</i>"]
             AbstractClient["AbstractAiClient<br/><i>Chunking & retry logic</i>"]
-            AnthropicImpl["AnthropicAiClient"]
-            OpenAiImpl["OpenAiClient"]
-            OllamaImpl["OllamaClient"]
-            LlamaCppImpl["LlamaCppClient"]
+            SpringAiAdapter["SpringAiChatModelClient<br/><i>ChatModel adapter</i>"]
+            AnthropicCompat["AnthropicCompatibleChatModel"]
+            OpenAiCompat["OpenAiCompatibleChatModel"]
+            OllamaModel["OllamaChatModel<br/><i>(Spring AI built-in)</i>"]
         end
 
-        AppConfig["AppConfig<br/><i>Conditional bean creation</i>"]
-        AiConfig["AiConfigProperties<br/><i>Provider config</i>"]
+        AiFactory["AiClientFactory<br/><i>Dynamic client creation</i>"]
         PromptConfig["PromptConfigProperties<br/><i>Prompt definitions</i>"]
-        BotConfig["BotConfigProperties<br/><i>Bot alias config</i>"]
         SessionRepo["ReviewSessionRepository<br/><i>JPA repository</i>"]
     end
 
@@ -63,8 +61,6 @@ graph TD
     end
 
     Controller --> ReviewService
-    Controller --> BotConfig
-    ReviewService --> BotConfig
     ReviewService --> PromptService
     ReviewService --> GiteaClient
     ReviewService --> AiInterface
@@ -75,58 +71,53 @@ graph TD
     PromptService --> PromptFiles
     GiteaClient --> Gitea
     AiInterface -.-> AbstractClient
-    AbstractClient -.-> AnthropicImpl
-    AbstractClient -.-> OpenAiImpl
-    AbstractClient -.-> OllamaImpl
-    AbstractClient -.-> LlamaCppImpl
-    AnthropicImpl --> Anthropic
-    OpenAiImpl --> OpenAI
-    OllamaImpl --> Ollama
-    LlamaCppImpl --> LlamaCpp
-    AppConfig --> AiConfig
-    AppConfig --> AiInterface
+    AbstractClient -.-> SpringAiAdapter
+    SpringAiAdapter -.-> AnthropicCompat
+    SpringAiAdapter -.-> OpenAiCompat
+    SpringAiAdapter -.-> OllamaModel
+    AnthropicCompat --> Anthropic
+    OpenAiCompat --> OpenAI
+    OpenAiCompat --> LlamaCpp
+    OllamaModel --> Ollama
+    AiFactory --> AiInterface
 ```
 
 ## AI Provider Abstraction
 
-The bot uses a provider-agnostic `AiClient` interface to decouple review logic from any specific AI service:
+The bot uses Spring AI's `ChatModel` interface to decouple review logic from any specific AI service.  All providers are accessed through a unified `SpringAiChatModelClient` adapter:
 
 ```
-AiClient (interface)
+AiClient (interface — business-level contract)
  └── AbstractAiClient (abstract class — chunking, retry, message building)
-      ├── AnthropicAiClient (Anthropic Messages API)
-      ├── OpenAiClient (OpenAI Chat Completions API)
-      ├── OllamaClient (Ollama /api/chat)
-      └── LlamaCppClient (llama.cpp /v1/chat/completions with GBNF grammar)
+      └── SpringAiChatModelClient (wraps Spring AI ChatModel)
+           ├── AnthropicCompatibleChatModel (Anthropic Messages API)
+           ├── OpenAiCompatibleChatModel (OpenAI Chat Completions API / llama.cpp)
+           └── OllamaChatModel (Spring AI built-in, Ollama /api/chat)
 ```
 
-### Provider Differences
+### Spring AI Integration
 
-| Feature | Anthropic | OpenAI | Ollama | llama.cpp |
-|---|---|---|---|---|
-| System prompt | Top-level `system` field | `role: "system"` message | `role: "system"` message | `role: "system"` message |
-| Endpoint | `/v1/messages` | `/v1/chat/completions` | `/api/chat` | `/v1/chat/completions` |
-| Auth | `x-api-key` header | `Bearer` token | None | None |
-| Streaming | Not used | Not used | Disabled (`stream: false`) | Disabled (`stream: false`) |
-| JSON Mode | N/A | N/A | `format: "json"` | GBNF grammar |
+The migration to Spring AI provides a standard `ChatModel` interface for all AI providers.  The `SpringAiChatModelClient` bridges the existing `AiClient` interface (used throughout the application) with Spring AI's `ChatModel`:
 
-### Conditional Bean Creation
+- **`SpringAiChatModelClient`** — Extends `AbstractAiClient`, delegates AI API calls to a `ChatModel` instance while preserving diff chunking, retry-on-token-limit, and message building logic.
+- **`AiClientFactory`** — Creates the appropriate `ChatModel` implementation based on the provider type from the database configuration.
 
-The `AppConfig` uses `@ConditionalOnProperty(name = "ai.provider")` to create exactly one `AiClient` bean based on configuration:
+### Provider-Specific ChatModel Implementations
 
-```java
-@ConditionalOnProperty(name = "ai.provider", havingValue = "anthropic", matchIfMissing = true)
-public AiClient anthropicAiClient(AiConfigProperties config) { ... }
+Due to a binary incompatibility between Spring AI 1.x's built-in `AnthropicApi`/`OpenAiApi` classes and Spring Framework 7 (Spring Boot 4), lightweight `ChatModel` adapters are used for Anthropic and OpenAI-compatible providers:
 
-@ConditionalOnProperty(name = "ai.provider", havingValue = "openai")
-public AiClient openAiClient(AiConfigProperties config) { ... }
+| Provider | ChatModel Implementation | API Endpoint | Notes |
+|---|---|---|---|
+| Anthropic | `AnthropicCompatibleChatModel` | `/v1/messages` | System prompt as top-level field |
+| OpenAI | `OpenAiCompatibleChatModel` | `/v1/chat/completions` | Standard OpenAI format |
+| Ollama | `OllamaChatModel` (Spring AI) | `/api/chat` | Uses Spring AI's built-in implementation |
+| llama.cpp | `OpenAiCompatibleChatModel` | `/v1/chat/completions` | OpenAI-compatible API |
 
-@ConditionalOnProperty(name = "ai.provider", havingValue = "ollama")
-public AiClient ollamaClient(AiConfigProperties config) { ... }
+When Spring AI releases a version fully compatible with Spring Boot 4 / Spring Framework 7, the `AnthropicCompatibleChatModel` and `OpenAiCompatibleChatModel` can be replaced with Spring AI's built-in `AnthropicChatModel` and `OpenAiChatModel`.
 
-@ConditionalOnProperty(name = "ai.provider", havingValue = "llamacpp")
-public AiClient llamaCppClient(AiConfigProperties config) { ... }
-```
+### Dynamic Client Creation
+
+The `AiClientFactory` creates `ChatModel` and `AiClient` instances dynamically from persisted `AiIntegration` entities (database-only configuration).  Clients are cached by integration ID and rebuilt when the configuration changes:
 
 ## Components
 
@@ -180,17 +171,16 @@ public AiClient llamaCppClient(AiConfigProperties config) { ... }
 - Falls back to the `default` definition, then to a hardcoded built-in prompt
 - Resolves per-prompt model and Gitea token overrides
 
-### AiClient / AbstractAiClient
+### AiClient / AbstractAiClient / SpringAiChatModelClient
 
 - **Package:** `org.remus.giteabot.ai`
-- `AiClient` is the provider-agnostic interface used by `CodeReviewService`
+- `AiClient` is the provider-agnostic interface used by `CodeReviewService` and `IssueImplementationService`
 - `AbstractAiClient` contains shared logic: diff chunking, retry on token limits, message building
-- Provider implementations:
-  - **AnthropicAiClient** (`org.remus.giteabot.ai.anthropic`) — Anthropic Messages API with `system` as a top-level field
-  - **OpenAiClient** (`org.remus.giteabot.ai.openai`) — OpenAI Chat Completions API with `role: "system"` message
-  - **OllamaClient** (`org.remus.giteabot.ai.ollama`) — Ollama `/api/chat` with streaming disabled
-  - **LlamaCppClient** (`org.remus.giteabot.ai.llamacpp`) — llama.cpp `/v1/chat/completions` with GBNF grammar support for structured JSON output
-- Supports system prompt and model overrides per request
+- `SpringAiChatModelClient` extends `AbstractAiClient` and delegates to Spring AI's `ChatModel` for API calls
+- Provider-specific `ChatModel` implementations:
+  - **AnthropicCompatibleChatModel** (`org.remus.giteabot.ai`) — Anthropic Messages API with `system` as a top-level field
+  - **OpenAiCompatibleChatModel** (`org.remus.giteabot.ai`) — OpenAI Chat Completions API (also used for llama.cpp)
+  - **OllamaChatModel** (Spring AI built-in) — Ollama `/api/chat`
 
 ### GiteaApiClient
 
@@ -211,23 +201,12 @@ public AiClient llamaCppClient(AiConfigProperties config) { ... }
   - Review submitted events (`review.id`, `review.type`, `review.content`)
   - Sender information (`sender`)
 
-### BotConfigProperties
+### AiClientFactory
 
-- **Package:** `org.remus.giteabot.config`
-- Configures the bot mention alias (default: `@ai_bot`)
-- Used by both the webhook controller (for filtering) and the code review service (for review comment filtering)
-
-### AppConfig
-
-- **Package:** `org.remus.giteabot.config`
-- Configures `RestClient` bean for Gitea API communication
-- Uses `@ConditionalOnProperty` to create the correct `AiClient` bean based on `ai.provider`
-
-### AiConfigProperties
-
-- **Package:** `org.remus.giteabot.ai`
-- Maps `ai.*` configuration properties for provider selection and per-provider settings
-- Contains nested config classes for Anthropic, OpenAI, and Ollama
+- **Package:** `org.remus.giteabot.admin`
+- Creates and caches `AiClient` instances from persisted `AiIntegration` entities
+- Uses Spring AI's `ChatModel` interface — creates provider-specific implementations based on `providerType`
+- Cache invalidation based on `updatedAt` timestamp ensures config changes take effect
 
 ### PromptConfigProperties
 

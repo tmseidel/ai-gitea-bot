@@ -85,19 +85,25 @@ public class AiClientFactory {
 
         return switch (providerType) {
             case "anthropic" -> {
+                if (decryptedApiKey == null || decryptedApiKey.isBlank()) {
+                    throw new IllegalArgumentException("API key is required for Anthropic provider");
+                }
                 String apiVersion = integration.getApiVersion() != null ? integration.getApiVersion() : "2023-06-01";
                 RestClient restClient = RestClient.builder()
                         .baseUrl(apiUrl)
-                        .defaultHeader("x-api-key", decryptedApiKey != null ? decryptedApiKey : "")
+                        .defaultHeader("x-api-key", decryptedApiKey)
                         .defaultHeader("anthropic-version", apiVersion)
                         .defaultHeader("Content-Type", "application/json")
                         .build();
                 yield new AnthropicCompatibleChatModel(restClient, integration.getModel(), integration.getMaxTokens());
             }
             case "openai" -> {
+                if (decryptedApiKey == null || decryptedApiKey.isBlank()) {
+                    throw new IllegalArgumentException("API key is required for OpenAI provider");
+                }
                 RestClient restClient = RestClient.builder()
                         .baseUrl(apiUrl)
-                        .defaultHeader("Authorization", "Bearer " + (decryptedApiKey != null ? decryptedApiKey : ""))
+                        .defaultHeader("Authorization", "Bearer " + decryptedApiKey)
                         .defaultHeader("Content-Type", "application/json")
                         .build();
                 yield new OpenAiCompatibleChatModel(restClient, integration.getModel(), integration.getMaxTokens());
