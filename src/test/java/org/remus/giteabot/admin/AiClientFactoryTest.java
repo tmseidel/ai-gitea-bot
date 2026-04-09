@@ -6,10 +6,11 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.remus.giteabot.ai.AiClient;
-import org.remus.giteabot.ai.anthropic.AnthropicAiClient;
-import org.remus.giteabot.ai.llamacpp.LlamaCppClient;
-import org.remus.giteabot.ai.ollama.OllamaClient;
-import org.remus.giteabot.ai.openai.OpenAiClient;
+import org.remus.giteabot.ai.AnthropicCompatibleChatModel;
+import org.remus.giteabot.ai.OpenAiCompatibleChatModel;
+import org.remus.giteabot.ai.SpringAiChatModelClient;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.ollama.OllamaChatModel;
 
 import java.time.Instant;
 
@@ -26,39 +27,39 @@ class AiClientFactoryTest {
     private AiClientFactory aiClientFactory;
 
     @Test
-    void getClient_anthropic_createsAnthropicClient() {
+    void getClient_anthropic_createsSpringAiClient() {
         AiIntegration integration = createIntegration("anthropic", "sk-test");
         when(aiIntegrationService.decryptApiKey(integration)).thenReturn("sk-test");
 
         AiClient client = aiClientFactory.getClient(integration);
-        assertInstanceOf(AnthropicAiClient.class, client);
+        assertInstanceOf(SpringAiChatModelClient.class, client);
     }
 
     @Test
-    void getClient_openai_createsOpenAiClient() {
+    void getClient_openai_createsSpringAiClient() {
         AiIntegration integration = createIntegration("openai", "sk-test");
         when(aiIntegrationService.decryptApiKey(integration)).thenReturn("sk-test");
 
         AiClient client = aiClientFactory.getClient(integration);
-        assertInstanceOf(OpenAiClient.class, client);
+        assertInstanceOf(SpringAiChatModelClient.class, client);
     }
 
     @Test
-    void getClient_ollama_createsOllamaClient() {
+    void getClient_ollama_createsSpringAiClient() {
         AiIntegration integration = createIntegration("ollama", null);
         when(aiIntegrationService.decryptApiKey(integration)).thenReturn(null);
 
         AiClient client = aiClientFactory.getClient(integration);
-        assertInstanceOf(OllamaClient.class, client);
+        assertInstanceOf(SpringAiChatModelClient.class, client);
     }
 
     @Test
-    void getClient_llamacpp_createsLlamaCppClient() {
+    void getClient_llamacpp_createsSpringAiClient() {
         AiIntegration integration = createIntegration("llamacpp", null);
         when(aiIntegrationService.decryptApiKey(integration)).thenReturn(null);
 
         AiClient client = aiClientFactory.getClient(integration);
-        assertInstanceOf(LlamaCppClient.class, client);
+        assertInstanceOf(SpringAiChatModelClient.class, client);
     }
 
     @Test
@@ -91,6 +92,43 @@ class AiClientFactoryTest {
         integration.setUpdatedAt(Instant.now().plusSeconds(60));
         AiClient second = aiClientFactory.getClient(integration);
         assertNotSame(first, second);
+    }
+
+    @Test
+    void createChatModel_anthropic_createsAnthropicCompatibleChatModel() {
+        AiIntegration integration = createIntegration("anthropic", "sk-test");
+        when(aiIntegrationService.decryptApiKey(integration)).thenReturn("sk-test");
+
+        ChatModel chatModel = aiClientFactory.createChatModel(integration);
+        assertInstanceOf(AnthropicCompatibleChatModel.class, chatModel);
+    }
+
+    @Test
+    void createChatModel_openai_createsOpenAiCompatibleChatModel() {
+        AiIntegration integration = createIntegration("openai", "sk-test");
+        when(aiIntegrationService.decryptApiKey(integration)).thenReturn("sk-test");
+
+        ChatModel chatModel = aiClientFactory.createChatModel(integration);
+        assertInstanceOf(OpenAiCompatibleChatModel.class, chatModel);
+    }
+
+    @Test
+    void createChatModel_ollama_createsOllamaChatModel() {
+        AiIntegration integration = createIntegration("ollama", null);
+        when(aiIntegrationService.decryptApiKey(integration)).thenReturn(null);
+
+        ChatModel chatModel = aiClientFactory.createChatModel(integration);
+        assertInstanceOf(OllamaChatModel.class, chatModel);
+    }
+
+    @Test
+    void createChatModel_llamacpp_createsOpenAiCompatibleChatModel() {
+        AiIntegration integration = createIntegration("llamacpp", null);
+        when(aiIntegrationService.decryptApiKey(integration)).thenReturn(null);
+
+        // llama.cpp uses OpenAI-compatible API
+        ChatModel chatModel = aiClientFactory.createChatModel(integration);
+        assertInstanceOf(OpenAiCompatibleChatModel.class, chatModel);
     }
 
     private AiIntegration createIntegration(String providerType, String apiKey) {
