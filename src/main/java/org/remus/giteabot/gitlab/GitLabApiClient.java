@@ -104,21 +104,11 @@ public class GitLabApiClient implements RepositoryApiClient {
 
     @Override
     public void addReaction(String owner, String repo, Long commentId, String reaction) {
-        log.info("Adding '{}' reaction to note #{} in {}/{}", reaction, commentId, owner, repo);
-        String projectPath = encodeProjectPath(owner, repo);
-        String emojiName = mapReactionToEmoji(reaction);
-        try {
-            gitlabRestClient.post()
-                    .uri("/api/v4/projects/{projectPath}/merge_requests/{iid}/notes/{noteId}/award_emoji",
-                            projectPath, commentId, commentId)
-                    .body(Map.of("name", emojiName))
-                    .retrieve()
-                    .toBodilessEntity();
-        } catch (Exception e) {
-            // GitLab award emoji endpoint requires the MR IID, which we don't have here.
-            // Fall back to a no-op with a warning.
-            log.warn("Failed to add reaction '{}' to note #{}: {}", reaction, commentId, e.getMessage());
-        }
+        // GitLab's award emoji API requires the merge request IID in addition to the note ID,
+        // but the RepositoryApiClient interface only provides the comment/note ID.
+        // This is a known limitation — reactions are best-effort and non-critical.
+        log.debug("Skipping reaction '{}' on note #{} in {}/{}: GitLab requires MR IID which is not available",
+                reaction, commentId, owner, repo);
     }
 
     @Override
@@ -442,23 +432,6 @@ public class GitLabApiClient implements RepositoryApiClient {
             }
         }
         return sb.toString();
-    }
-
-    /**
-     * Maps a reaction name (e.g., "eyes") to the corresponding GitLab emoji name.
-     */
-    private String mapReactionToEmoji(String reaction) {
-        return switch (reaction) {
-            case "eyes" -> "eyes";
-            case "+1", "thumbs_up" -> "thumbsup";
-            case "-1", "thumbs_down" -> "thumbsdown";
-            case "heart" -> "heart";
-            case "hooray", "tada" -> "tada";
-            case "laugh" -> "laughing";
-            case "confused" -> "confused";
-            case "rocket" -> "rocket";
-            default -> reaction;
-        };
     }
 
     /**
