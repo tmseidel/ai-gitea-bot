@@ -3,6 +3,7 @@ package org.remus.giteabot.config;
 import org.remus.giteabot.ai.AiClient;
 import org.remus.giteabot.ai.AiConfigProperties;
 import org.remus.giteabot.ai.anthropic.AnthropicAiClient;
+import org.remus.giteabot.ai.llamacpp.LlamaCppClient;
 import org.remus.giteabot.ai.ollama.OllamaClient;
 import org.remus.giteabot.ai.openai.OpenAiClient;
 import org.springframework.beans.factory.annotation.Value;
@@ -62,6 +63,19 @@ public class AppConfig {
                 .build();
 
         return new OllamaClient(restClient, config.getModel(), config.getMaxTokens(),
+                config.getMaxDiffCharsPerChunk(), config.getMaxDiffChunks(),
+                config.getRetryTruncatedChunkChars());
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "ai.provider", havingValue = "llamacpp")
+    public AiClient llamaCppClient(AiConfigProperties config) {
+        RestClient restClient = RestClient.builder()
+                .baseUrl(config.getLlamacpp().getApiUrl())
+                .defaultHeader("Content-Type", "application/json")
+                .build();
+
+        return new LlamaCppClient(restClient, config.getModel(), config.getMaxTokens(),
                 config.getMaxDiffCharsPerChunk(), config.getMaxDiffChunks(),
                 config.getRetryTruncatedChunkChars());
     }

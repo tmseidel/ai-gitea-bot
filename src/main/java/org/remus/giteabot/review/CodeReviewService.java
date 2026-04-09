@@ -85,6 +85,9 @@ public class CodeReviewService {
             String commentBody = formatReviewComment(review);
             giteaApiClient.postReviewComment(owner, repo, prNumber, commentBody, giteaToken);
 
+            // Compact context window to reduce memory/token usage for subsequent calls
+            sessionService.compactContextWindow(session);
+
             log.info("Code review completed for PR #{} in {}/{}", prNumber, owner, repo);
         } catch (Exception e) {
             log.error("Code review failed for PR #{} in {}/{}: {}", prNumber, owner, repo, e.getMessage(), e);
@@ -137,6 +140,9 @@ public class CodeReviewService {
             // Post the response as a comment on the PR
             String formattedResponse = formatBotResponse(response);
             giteaApiClient.postComment(owner, repo, prNumber, formattedResponse, giteaToken);
+
+            // Compact context window to reduce memory/token usage
+            sessionService.compactContextWindow(session);
 
             log.info("Bot command handled for comment #{} on PR #{} in {}/{}", commentId, prNumber, owner, repo);
         } catch (Exception e) {
@@ -222,6 +228,9 @@ public class CodeReviewService {
             } else {
                 giteaApiClient.postComment(owner, repo, prNumber, formattedResponse, giteaToken);
             }
+
+            // Compact context window to reduce memory/token usage
+            sessionService.compactContextWindow(session);
 
             log.info("Inline comment handled for comment #{} on PR #{} in {}/{}",
                     commentId, prNumber, owner, repo);
@@ -340,6 +349,9 @@ public class CodeReviewService {
                             reviewComment.getId(), prNumber, owner, repo, e.getMessage(), e);
                 }
             }
+
+            // Compact context window after processing all comments
+            sessionService.compactContextWindow(session);
 
             log.info("Review submitted event handled for PR #{} in {}/{}", prNumber, owner, repo);
         } catch (Exception e) {

@@ -86,10 +86,31 @@ public abstract class AbstractAiClient implements AiClient {
     @Override
     public String chat(List<AiMessage> conversationHistory, String newUserMessage,
                        String systemPrompt, String modelOverride) {
+        return chat(conversationHistory, newUserMessage, systemPrompt, modelOverride, null);
+    }
+
+    @Override
+    public String chat(List<AiMessage> conversationHistory, String newUserMessage,
+                       String systemPrompt, String modelOverride, Integer maxTokensOverride) {
         String effectiveModel = resolveModel(modelOverride);
         String effectivePrompt = resolvePrompt(systemPrompt);
+        int effectiveMaxTokens = (maxTokensOverride != null && maxTokensOverride > 0) ? maxTokensOverride : maxTokens;
 
-        log.info("Sending chat message to AI provider model={}, conversation size={}", effectiveModel, conversationHistory.size());
+        log.info("Sending chat message to AI provider model={}, conversation size={}, maxTokens={}",
+                effectiveModel, conversationHistory.size(), effectiveMaxTokens);
+
+        // Debug logging: Log the full request
+        if (log.isDebugEnabled()) {
+            log.debug("=== AI CHAT REQUEST ===");
+            log.debug("System Prompt:\n{}", effectivePrompt);
+            log.debug("Conversation History ({} messages):", conversationHistory.size());
+            for (int i = 0; i < conversationHistory.size(); i++) {
+                AiMessage msg = conversationHistory.get(i);
+                log.debug("  [{}] {}: {} chars", i, msg.getRole(),
+                        msg.getContent() != null ? msg.getContent().length() : 0);
+            }
+            log.debug("New User Message ({} chars):\n{}", newUserMessage.length(), newUserMessage);
+        }
 
         List<AiMessage> messages = new ArrayList<>(conversationHistory);
         messages.add(AiMessage.builder()
@@ -97,7 +118,15 @@ public abstract class AbstractAiClient implements AiClient {
                 .content(newUserMessage)
                 .build());
 
-        return sendChatRequest(effectivePrompt, effectiveModel, maxTokens, messages);
+        String response = sendChatRequest(effectivePrompt, effectiveModel, effectiveMaxTokens, messages);
+
+        // Debug logging: Log the response
+        if (log.isDebugEnabled()) {
+            log.debug("=== AI CHAT RESPONSE ===");
+            log.debug("Response ({} chars):\n{}", response != null ? response.length() : 0, response);
+        }
+
+        return response;
     }
 
     @Override

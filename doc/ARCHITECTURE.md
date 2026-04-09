@@ -8,7 +8,7 @@ This document describes the high-level architecture of the AI Gitea Bot, includi
 graph LR
     Gitea["Gitea Instance"]
     Bot["AI Gitea Bot"]
-    AI["AI Provider<br/>(Anthropic / OpenAI / Ollama)"]
+    AI["AI Provider<br/>(Anthropic / OpenAI / Ollama / llama.cpp)"]
     DB["PostgreSQL Database"]
 
     Gitea -- "Webhook (PR/Comment/Review event)" --> Bot
@@ -42,6 +42,7 @@ graph TD
             AnthropicImpl["AnthropicAiClient"]
             OpenAiImpl["OpenAiClient"]
             OllamaImpl["OllamaClient"]
+            LlamaCppImpl["LlamaCppClient"]
         end
 
         AppConfig["AppConfig<br/><i>Conditional bean creation</i>"]
@@ -56,6 +57,7 @@ graph TD
         Anthropic["Anthropic API"]
         OpenAI["OpenAI API"]
         Ollama["Ollama (local)"]
+        LlamaCpp["llama.cpp (local)"]
         PromptFiles["Prompt Files<br/><i>prompts/*.md</i>"]
         DB["Database<br/><i>PostgreSQL / H2</i>"]
     end
@@ -76,9 +78,11 @@ graph TD
     AbstractClient -.-> AnthropicImpl
     AbstractClient -.-> OpenAiImpl
     AbstractClient -.-> OllamaImpl
+    AbstractClient -.-> LlamaCppImpl
     AnthropicImpl --> Anthropic
     OpenAiImpl --> OpenAI
     OllamaImpl --> Ollama
+    LlamaCppImpl --> LlamaCpp
     AppConfig --> AiConfig
     AppConfig --> AiInterface
 ```
@@ -92,17 +96,19 @@ AiClient (interface)
  └── AbstractAiClient (abstract class — chunking, retry, message building)
       ├── AnthropicAiClient (Anthropic Messages API)
       ├── OpenAiClient (OpenAI Chat Completions API)
-      └── OllamaClient (Ollama /api/chat)
+      ├── OllamaClient (Ollama /api/chat)
+      └── LlamaCppClient (llama.cpp /v1/chat/completions with GBNF grammar)
 ```
 
 ### Provider Differences
 
-| Feature | Anthropic | OpenAI | Ollama |
-|---|---|---|---|
-| System prompt | Top-level `system` field | `role: "system"` message | `role: "system"` message |
-| Endpoint | `/v1/messages` | `/v1/chat/completions` | `/api/chat` |
-| Auth | `x-api-key` header | `Bearer` token | None |
-| Streaming | Not used | Not used | Disabled (`stream: false`) |
+| Feature | Anthropic | OpenAI | Ollama | llama.cpp |
+|---|---|---|---|---|
+| System prompt | Top-level `system` field | `role: "system"` message | `role: "system"` message | `role: "system"` message |
+| Endpoint | `/v1/messages` | `/v1/chat/completions` | `/api/chat` | `/v1/chat/completions` |
+| Auth | `x-api-key` header | `Bearer` token | None | None |
+| Streaming | Not used | Not used | Disabled (`stream: false`) | Disabled (`stream: false`) |
+| JSON Mode | N/A | N/A | `format: "json"` | GBNF grammar |
 
 ### Conditional Bean Creation
 
@@ -117,6 +123,9 @@ public AiClient openAiClient(AiConfigProperties config) { ... }
 
 @ConditionalOnProperty(name = "ai.provider", havingValue = "ollama")
 public AiClient ollamaClient(AiConfigProperties config) { ... }
+
+@ConditionalOnProperty(name = "ai.provider", havingValue = "llamacpp")
+public AiClient llamaCppClient(AiConfigProperties config) { ... }
 ```
 
 ## Components
@@ -180,6 +189,7 @@ public AiClient ollamaClient(AiConfigProperties config) { ... }
   - **AnthropicAiClient** (`org.remus.giteabot.ai.anthropic`) — Anthropic Messages API with `system` as a top-level field
   - **OpenAiClient** (`org.remus.giteabot.ai.openai`) — OpenAI Chat Completions API with `role: "system"` message
   - **OllamaClient** (`org.remus.giteabot.ai.ollama`) — Ollama `/api/chat` with streaming disabled
+  - **LlamaCppClient** (`org.remus.giteabot.ai.llamacpp`) — llama.cpp `/v1/chat/completions` with GBNF grammar support for structured JSON output
 - Supports system prompt and model overrides per request
 
 ### GiteaApiClient

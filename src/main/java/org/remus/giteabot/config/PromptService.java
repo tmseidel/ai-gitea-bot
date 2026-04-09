@@ -105,7 +105,8 @@ public class PromptService {
             log.debug("Loaded prompt from file: {}", filePath);
             return content;
         } catch (IOException e) {
-            log.warn("Failed to read prompt file '{}', using default system prompt: {}", filePath, e.getMessage());
+            log.warn("Failed to read prompt file '{}': {}. Check that PROMPTS_DIR is set correctly " +
+                    "and the file exists. Using built-in default system prompt.", filePath, e.getMessage());
             return DEFAULT_SYSTEM_PROMPT;
         }
     }

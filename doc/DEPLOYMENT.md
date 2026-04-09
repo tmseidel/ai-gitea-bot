@@ -137,6 +137,20 @@ volumes:
 |---|---|---|
 | `BOT_USERNAME` | `ai_bot` | Gitea username of the bot account (mention alias is derived as `@ai_bot`) |
 
+### Optional — Agent
+
+The issue implementation agent is **enabled by default**. See [Agent Documentation](AGENT.md) for full details.
+
+| Variable | Default | Description |
+|---|---|---|
+| `AGENT_ENABLED` | `true` | Enable/disable the agent feature |
+| `AGENT_MAX_FILES` | `20` | Maximum files the agent can modify per issue |
+| `AGENT_MAX_TOKENS` | `32768` | Maximum tokens for AI responses |
+| `AGENT_BRANCH_PREFIX` | `ai-agent/` | Prefix for created branches |
+| `AGENT_ALLOWED_REPOS` | *(empty = all)* | Comma-separated list of `owner/repo` where agent is active |
+| `AGENT_VALIDATION_ENABLED` | `true` | Enable validation before commit |
+| `AGENT_VALIDATION_MAX_RETRIES` | `3` | Max iterations for error correction |
+
 ### Optional — Database
 
 | Variable | Default | Description |

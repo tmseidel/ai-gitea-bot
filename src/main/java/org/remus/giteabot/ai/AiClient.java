@@ -4,7 +4,7 @@ import java.util.List;
 
 /**
  * Provider-agnostic interface for AI-powered code review.
- * Implementations exist for Anthropic, OpenAI, and Ollama.
+ * Implementations exist for Anthropic, OpenAI, Ollama, and llama.cpp.
  */
 public interface AiClient {
 
@@ -17,4 +17,12 @@ public interface AiClient {
      */
     String chat(List<AiMessage> conversationHistory, String newUserMessage,
                 String systemPrompt, String modelOverride);
+
+    /**
+     * Sends a multi-turn conversation to the AI provider with a custom max tokens limit.
+     *
+     * @param maxTokensOverride Custom max tokens limit (if null, uses the default)
+     */
+    String chat(List<AiMessage> conversationHistory, String newUserMessage,
+                String systemPrompt, String modelOverride, Integer maxTokensOverride);
 }

@@ -11,6 +11,7 @@ AI-powered code review bot that connects your Gitea instance with multiple AI pr
 - **Session Management** — Maintains conversation history per PR for follow-up interactions
 - **Configurable Prompts** — Define multiple review profiles via markdown files
 - **Smart Diff Chunking** — Splits large diffs into chunks with retry on token limits
+- **Issue Implementation Agent** — Assign the bot to an issue for autonomous code generation and PR creation
 
 ## Quick Start
 
@@ -106,6 +107,9 @@ docker compose up -d
 | Variable | Default | Description |
 |---|---|---|
 | `BOT_USERNAME` | `ai_bot` | Gitea username of the bot account (mention alias `@ai_bot` is derived automatically) |
+| `AGENT_ENABLED` | `false` | Enable the autonomous issue implementation agent |
+| `AGENT_MAX_FILES` | `10` | Maximum number of files the agent can modify per issue |
+| `AGENT_BRANCH_PREFIX` | `ai-agent/` | Prefix for branches created by the agent |
 | `DATABASE_URL` | `jdbc:postgresql://db:5432/giteabot` | JDBC connection URL |
 | `DATABASE_USERNAME` | `giteabot` | Database username |
 | `DATABASE_PASSWORD` | `giteabot` | Database password |

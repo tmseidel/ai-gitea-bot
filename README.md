@@ -33,9 +33,11 @@ Choose the AI provider that fits your needs:
 | **Anthropic** | Claude models via Anthropic API (default) |
 | **OpenAI** | GPT models via OpenAI API or compatible endpoints |
 | **Ollama** | Run open-source LLMs locally — no API key needed |
+| **llama.cpp** | High-performance local inference with GBNF grammar support |
 
 ### More Features
 
+- **Issue Implementation Agent** — Assign the bot to an issue and it will autonomously implement changes and create a PR (see [Agent Documentation](doc/AGENT.md))
 - **Session Management** — Maintains conversation history per PR, persisted in a database, enabling context-aware follow-up reviews
 - **Configurable System Prompts** — Define multiple review profiles (security audit, performance review, etc.) via markdown files, selectable per webhook
 - **Per-Prompt Overrides** — Each prompt profile can override the AI model and Gitea API token
@@ -123,6 +125,25 @@ docker compose -f systemtest/docker-compose-ollama.yml up --build -d
 
 This compose file provisions the local Ollama services only. Start the bot and your Gitea server separately, then see [Using Ollama](doc/OLLAMA.md) for details on configuring the bot to use Ollama.
 
+> **Note:** The issue implementation agent is not recommended with Ollama due to JSON output limitations. Set `AGENT_ENABLED=false` when using local LLMs. Code reviews work well with any provider.
+
+### With llama.cpp (local with grammar support)
+
+```bash
+# Start llama.cpp server with Qwen2.5-Coder 7B
+docker compose -f systemtest/docker-compose-llamacpp.yml up -d
+
+# Configure and start the bot
+export AI_PROVIDER=llamacpp
+export AI_MODEL=qwen2.5-coder-7b-instruct
+export AI_LLAMACPP_API_URL=http://localhost:8081
+export GITEA_TOKEN=your-gitea-api-token
+
+docker compose up -d
+```
+
+llama.cpp supports GBNF grammar constraints, making the agent feature more reliable than Ollama. See [Using llama.cpp](doc/LLAMACPP.md) for details.
+
 ## Architecture Overview
 
 ```mermaid
@@ -147,9 +168,11 @@ The bot receives webhooks from Gitea, fetches PR diffs, sends them to the config
 | Document | Description |
 |---|---|
 | [Architecture](doc/ARCHITECTURE.md) | Component diagrams, request flows, webhook routing |
+| [Agent](doc/AGENT.md) | Autonomous issue implementation agent setup and usage |
 | [Gitea Setup](doc/GITEA_SETUP.md) | Bot user creation, permissions, API tokens, webhook configuration |
 | [Deployment](doc/DEPLOYMENT.md) | Docker Compose deployment, environment variables, prompt configuration |
 | [Using Ollama](doc/OLLAMA.md) | Running with local LLMs via Ollama |
+| [Using llama.cpp](doc/LLAMACPP.md) | Running with llama.cpp and GBNF grammar support |
 | [Local Development](doc/LOCAL_DEVELOPMENT.md) | Building, testing, local Gitea instance, project structure |
 | [Contributing](CONTRIBUTING.md) | Contribution guidelines, coding conventions |
 | [Code of Conduct](CODE_OF_CONDUCT.md) | Community standards |

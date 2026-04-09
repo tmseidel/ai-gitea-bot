@@ -93,8 +93,18 @@ public class WebhookPayload {
         private String title;
         private String body;
 
+        /**
+         * The branch reference associated with this issue (if set in Gitea).
+         * When set, the agent will use this branch as the base for the PR.
+         */
+        private String ref;
+
         @JsonProperty("pull_request")
         private IssuePullRequest pullRequest;
+
+        private Owner assignee;
+
+        private java.util.List<Owner> assignees;
     }
 
     @Data

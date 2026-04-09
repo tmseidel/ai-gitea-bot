@@ -17,6 +17,13 @@ public class OllamaRequest {
 
     private Options options;
 
+    /**
+     * Output format. Set to "json" to force JSON output from the model.
+     * This significantly improves reliability when structured output is required.
+     * See: https://github.com/ollama/ollama/blob/main/docs/api.md#generate-a-chat-completion
+     */
+    private String format;
+
     @Data
     @Builder
     public static class Message {

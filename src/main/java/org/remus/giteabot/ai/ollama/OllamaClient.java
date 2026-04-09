@@ -13,6 +13,9 @@ import java.util.Locale;
 /**
  * AI client implementation for Ollama (local LLM inference).
  * Uses the /api/chat endpoint with system prompt as a role message and streaming disabled.
+ * <p>
+ * Automatically enables JSON mode when the system prompt requests JSON output,
+ * which significantly improves reliability for structured responses (e.g., agent feature).
  */
 @Slf4j
 public class OllamaClient extends AbstractAiClient {
@@ -33,7 +36,8 @@ public class OllamaClient extends AbstractAiClient {
         messages.add(OllamaRequest.Message.builder().role("system").content(systemPrompt).build());
         messages.add(OllamaRequest.Message.builder().role("user").content(userMessage).build());
 
-        return doRequest(effectiveModel, messages, maxTokens, "review");
+        boolean useJsonMode = shouldUseJsonMode(systemPrompt);
+        return doRequest(effectiveModel, messages, maxTokens, "review", useJsonMode);
     }
 
     @Override
@@ -49,7 +53,8 @@ public class OllamaClient extends AbstractAiClient {
                     .build());
         }
 
-        return doRequest(effectiveModel, messages, maxTokens, "chat");
+        boolean useJsonMode = shouldUseJsonMode(systemPrompt);
+        return doRequest(effectiveModel, messages, maxTokens, "chat", useJsonMode);
     }
 
     @Override
@@ -62,15 +67,38 @@ public class OllamaClient extends AbstractAiClient {
         return normalized.contains("too long") || normalized.contains("context length");
     }
 
-    private String doRequest(String model, List<OllamaRequest.Message> messages, int maxTokens, String context) {
-        OllamaRequest request = OllamaRequest.builder()
+    /**
+     * Detects whether the system prompt is requesting JSON output.
+     * If so, we enable Ollama's JSON mode for more reliable structured responses.
+     */
+    private boolean shouldUseJsonMode(String systemPrompt) {
+        if (systemPrompt == null) {
+            return false;
+        }
+        String lower = systemPrompt.toLowerCase(Locale.ROOT);
+        // Detect if the prompt asks for JSON output
+        return lower.contains("respond with a json")
+                || lower.contains("output json")
+                || lower.contains("output format") && lower.contains("json")
+                || lower.contains("```json");
+    }
+
+    private String doRequest(String model, List<OllamaRequest.Message> messages,
+                             int maxTokens, String context, boolean useJsonMode) {
+        OllamaRequest.OllamaRequestBuilder requestBuilder = OllamaRequest.builder()
                 .model(model)
                 .messages(messages)
                 .stream(false)
                 .options(OllamaRequest.Options.builder()
                         .numPredict(maxTokens)
-                        .build())
-                .build();
+                        .build());
+
+        if (useJsonMode) {
+            requestBuilder.format("json");
+            log.info("Ollama {} request: JSON mode enabled for structured output", context);
+        }
+
+        OllamaRequest request = requestBuilder.build();
 
         OllamaResponse response = restClient.post()
                 .uri("/api/chat")

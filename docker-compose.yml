@@ -21,6 +21,8 @@ services:
       AI_OPENAI_API_URL: ${AI_OPENAI_API_URL:-https://api.openai.com}
       AI_OPENAI_API_KEY: ${AI_OPENAI_API_KEY:-}
       AI_OLLAMA_API_URL: ${AI_OLLAMA_API_URL:-http://localhost:11434}
+      AI_LLAMACPP_API_URL: ${AI_LLAMACPP_API_URL:-http://localhost:8081}
+      AGENT_MAX_FILE_CONTENT_CHARS: ${AGENT_MAX_FILE_CONTENT_CHARS:-100000}
       PROMPTS_DIR: /app/prompts
       BOT_USERNAME: ${BOT_USERNAME:-ai_bot}
       DATABASE_URL: jdbc:postgresql://db:5432/giteabot
