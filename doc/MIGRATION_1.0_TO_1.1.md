@@ -2,6 +2,22 @@
 
 This guide helps you upgrade AI Gitea Bot from version 1.0.0 to 1.1.0, which introduces a web-based management UI with multi-bot support.
 
+## ⚠️ Breaking Changes
+
+This is a **breaking change**. The following environment variables are **no longer used** and have been removed:
+
+- `GITEA_URL`, `GITEA_TOKEN`
+- `AI_PROVIDER`, `AI_MODEL`, `AI_MAX_TOKENS`, `AI_MAX_DIFF_CHARS_PER_CHUNK`, `AI_MAX_DIFF_CHUNKS`, `AI_RETRY_TRUNCATED_CHUNK_CHARS`
+- `AI_ANTHROPIC_API_URL`, `AI_ANTHROPIC_API_KEY`, `AI_ANTHROPIC_API_VERSION`
+- `AI_OPENAI_API_URL`, `AI_OPENAI_API_KEY`
+- `AI_OLLAMA_API_URL`
+- `AI_LLAMACPP_API_URL`
+- `BOT_USERNAME`
+
+**All AI and Gitea configuration is now managed through the web UI** and stored in the database.
+
+The legacy `/api/webhook` endpoint (without a path variable) has been **removed**. All webhook traffic must use per-bot webhook URLs: `/api/webhook/{secret}`.
+
 ## What's New in 1.1.0
 
 - **Web Dashboard**: Manage bots, AI integrations, and Git integrations through a browser UI
@@ -30,7 +46,7 @@ services:
 
 ### 2. Update Your Docker Compose
 
-The existing environment variables (`GITEA_URL`, `GITEA_TOKEN`, `AI_PROVIDER`, etc.) continue to work as before for the default bot behavior. The new UI features are additive.
+Remove all AI and Gitea environment variables. Only database, encryption, and general settings remain:
 
 ```yaml
 version: '3.8'
@@ -38,18 +54,9 @@ services:
   bot:
     image: tmseidel/ai-gitea-bot:1.1.0
     environment:
-      # Existing configuration (still works)
-      GITEA_URL: http://gitea:3000
-      GITEA_TOKEN: your-gitea-token
-      AI_PROVIDER: anthropic
-      AI_MODEL: claude-sonnet-4-20250514
-      AI_MAX_TOKENS: 4096
-      AI_ANTHROPIC_API_KEY: your-api-key
-      BOT_USERNAME: ai_bot
       DATABASE_URL: jdbc:postgresql://db:5432/giteabot
       DATABASE_USERNAME: giteabot
       DATABASE_PASSWORD: change-me
-      # New in 1.1.0
       APP_ENCRYPTION_KEY: your-secure-encryption-key
     ports:
       - "8080:8080"
@@ -89,20 +96,17 @@ New tables added:
 
 After upgrading, visit `http://your-server:8080/setup` to create your administrator account. This is a one-time setup step.
 
-### 5. Configure Bots via UI (Optional)
+### 5. Configure Bots via UI (Required)
 
-After logging in, you can:
-1. Create AI Integrations matching your current provider settings
-2. Create Git Integrations matching your Gitea configuration
-3. Create Bots that combine an AI + Git integration with a unique webhook URL
+After logging in, you **must** recreate your configuration through the UI:
 
-### 6. Backward Compatibility
+1. **Create AI Integrations** matching your previous provider settings (API URL, API key, model, etc.)
+2. **Create Git Integrations** matching your previous Gitea configuration (URL, token)
+3. **Create Bots** that combine an AI + Git integration with a unique webhook URL
 
-The existing `/api/webhook` endpoint continues to work exactly as before using your environment variable configuration. The new per-bot webhook URLs (`/api/webhook/{secret}`) are additional endpoints for bots created through the UI.
+### 6. Update Gitea Webhooks
 
-## Breaking Changes
-
-None. The upgrade is fully backward compatible.
+Since the legacy `/api/webhook` endpoint has been removed, update all Gitea repository webhooks to use the new per-bot webhook URL (`/api/webhook/{secret}`). The webhook secret is shown in the bot management UI after creating a bot.
 
 ## New Environment Variables
 
@@ -115,5 +119,5 @@ None. The upgrade is fully backward compatible.
 If you need to roll back to 1.0.0:
 1. Stop the application
 2. Use the 1.0.0 Docker image
-3. The new database tables will be ignored by the older version
-4. Your existing configuration via environment variables will continue to work
+3. Restore the environment variables that were previously configured
+4. The new database tables will be ignored by the older version

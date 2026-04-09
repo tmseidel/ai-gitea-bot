@@ -3,11 +3,7 @@ package org.remus.giteabot.gitea;
 import lombok.extern.slf4j.Slf4j;
 import org.remus.giteabot.gitea.model.GiteaReview;
 import org.remus.giteabot.gitea.model.GiteaReviewComment;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
 import java.util.Base64;
@@ -17,31 +13,18 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 @Slf4j
-@Service
 public class GiteaApiClient {
 
     private final RestClient giteaRestClient;
     private final String giteaUrl;
-    private final String defaultGiteaToken;
     private final ConcurrentMap<String, RestClient> clientCache = new ConcurrentHashMap<>();
 
-    @Autowired
-    public GiteaApiClient(@Qualifier("giteaRestClient") RestClient giteaRestClient,
-                           @Value("${gitea.url}") String giteaUrl,
-                           @Value("${gitea.token}") String defaultGiteaToken) {
-        this.giteaRestClient = giteaRestClient;
-        this.giteaUrl = giteaUrl;
-        this.defaultGiteaToken = defaultGiteaToken;
-    }
-
     /**
-     * Creates a GiteaApiClient for a specific Git integration (used by per-bot webhook handling).
-     * This constructor does not use Spring annotations and is intended for manual instantiation.
+     * Creates a GiteaApiClient with the given RestClient and Gitea URL.
      */
     public GiteaApiClient(RestClient restClient, String giteaUrl) {
         this.giteaRestClient = restClient;
         this.giteaUrl = giteaUrl;
-        this.defaultGiteaToken = null;
     }
 
     public String getPullRequestDiff(String owner, String repo, Long pullNumber, String tokenOverride) {

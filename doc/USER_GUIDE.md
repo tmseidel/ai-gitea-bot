@@ -4,6 +4,8 @@
 
 AI Gitea Bot provides a web-based management interface for creating and managing AI-powered code review bots. Each bot connects an AI provider (Anthropic, OpenAI, Ollama, or llama.cpp) with a Git provider (Gitea) and has its own unique webhook URL.
 
+All AI and Gitea configuration is managed exclusively through the web UI and stored in the database. There are no environment variables for AI providers, Gitea connections, or bot usernames.
+
 ## Getting Started
 
 ### Initial Setup
@@ -122,10 +124,6 @@ Sensitive data (API keys, Git tokens) is encrypted at rest using AES-256-GCM enc
 
 The web UI is protected by Spring Security with form-based authentication. The API webhook endpoints (`/api/**`) remain unauthenticated to allow Gitea to send webhooks.
 
-### Backward Compatibility
-
-The original `/api/webhook` endpoint continues to work with the environment variable configuration (`GITEA_URL`, `GITEA_TOKEN`, `AI_PROVIDER`, etc.). The new per-bot webhook URLs are additional endpoints.
-
 ## Configuration Reference
 
 ### Environment Variables
@@ -133,12 +131,6 @@ The original `/api/webhook` endpoint continues to work with the environment vari
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `APP_ENCRYPTION_KEY` | (random) | Encryption key for sensitive data |
-| `GITEA_URL` | `http://localhost:3000` | Default Gitea URL (legacy) |
-| `GITEA_TOKEN` | (empty) | Default Gitea token (legacy) |
-| `AI_PROVIDER` | `anthropic` | Default AI provider (legacy) |
-| `AI_MODEL` | `claude-sonnet-4-20250514` | Default AI model (legacy) |
-| `AI_MAX_TOKENS` | `4096` | Default max tokens (legacy) |
-| `BOT_USERNAME` | `ai_bot` | Default bot username (legacy) |
 | `DATABASE_URL` | H2 in-memory | Database JDBC URL |
 | `DATABASE_USERNAME` | `sa` | Database username |
 | `DATABASE_PASSWORD` | (empty) | Database password |

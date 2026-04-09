@@ -2,13 +2,12 @@ package org.remus.giteabot.gitea;
 
 import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.remus.giteabot.admin.AiIntegration;
+import org.remus.giteabot.admin.Bot;
 import org.remus.giteabot.admin.BotService;
 import org.remus.giteabot.admin.BotWebhookService;
-import org.remus.giteabot.agent.IssueImplementationService;
-import org.remus.giteabot.config.AgentConfigProperties;
-import org.remus.giteabot.config.BotConfigProperties;
+import org.remus.giteabot.admin.GitIntegration;
 import org.remus.giteabot.gitea.model.WebhookPayload;
-import org.remus.giteabot.review.CodeReviewService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
@@ -16,8 +15,10 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.Instant;
+import java.util.Optional;
+
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -31,18 +32,6 @@ class GiteaWebhookControllerTest {
     private MockMvc mockMvc;
 
     @MockitoBean
-    private CodeReviewService codeReviewService;
-
-    @MockitoBean
-    private IssueImplementationService issueImplementationService;
-
-    @MockitoBean
-    private BotConfigProperties botConfigProperties;
-
-    @MockitoBean
-    private AgentConfigProperties agentConfigProperties;
-
-    @MockitoBean
     private BotService botService;
 
     @MockitoBean
@@ -52,75 +41,91 @@ class GiteaWebhookControllerTest {
     private ObjectMapper objectMapper;
 
     @Test
-    void handleWebhook_prOpened_triggersReview() throws Exception {
+    void handleBotWebhook_botFoundAndEnabled_prOpened_triggersReview() throws Exception {
+        Bot bot = createTestBot();
+        when(botService.findByWebhookSecret("test-secret")).thenReturn(Optional.of(bot));
+
         WebhookPayload payload = createTestPayload("opened");
 
-        mockMvc.perform(post("/api/webhook")
+        mockMvc.perform(post("/api/webhook/test-secret")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(payload)))
                 .andExpect(status().isOk())
                 .andExpect(content().string("review triggered"));
 
-        verify(codeReviewService).reviewPullRequest(any(WebhookPayload.class), isNull());
+        verify(botService).incrementWebhookCallCount(bot);
+        verify(botWebhookService).reviewPullRequest(eq(bot), any(WebhookPayload.class));
     }
 
     @Test
-    void handleWebhook_prSynchronized_triggersReview() throws Exception {
+    void handleBotWebhook_botFoundAndEnabled_prSynchronized_triggersReview() throws Exception {
+        Bot bot = createTestBot();
+        when(botService.findByWebhookSecret("test-secret")).thenReturn(Optional.of(bot));
+
         WebhookPayload payload = createTestPayload("synchronized");
 
-        mockMvc.perform(post("/api/webhook")
+        mockMvc.perform(post("/api/webhook/test-secret")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(payload)))
                 .andExpect(status().isOk())
                 .andExpect(content().string("review triggered"));
 
-        verify(codeReviewService).reviewPullRequest(any(WebhookPayload.class), isNull());
+        verify(botWebhookService).reviewPullRequest(eq(bot), any(WebhookPayload.class));
     }
 
     @Test
-    void handleWebhook_prClosed_closesSession() throws Exception {
+    void handleBotWebhook_botFoundAndEnabled_prClosed_closesSession() throws Exception {
+        Bot bot = createTestBot();
+        when(botService.findByWebhookSecret("test-secret")).thenReturn(Optional.of(bot));
+
         WebhookPayload payload = createTestPayload("closed");
 
-        mockMvc.perform(post("/api/webhook")
+        mockMvc.perform(post("/api/webhook/test-secret")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(payload)))
                 .andExpect(status().isOk())
                 .andExpect(content().string("session closed"));
 
-        verify(codeReviewService).handlePrClosed(any(WebhookPayload.class));
+        verify(botWebhookService).handlePrClosed(eq(bot), any(WebhookPayload.class));
     }
 
     @Test
-    void handleWebhook_noPullRequest_ignored() throws Exception {
-        WebhookPayload payload = new WebhookPayload();
-        payload.setAction("push");
+    void handleBotWebhook_botDisabled_returnsBotDisabled() throws Exception {
+        Bot bot = createTestBot();
+        bot.setEnabled(false);
+        when(botService.findByWebhookSecret("test-secret")).thenReturn(Optional.of(bot));
 
-        mockMvc.perform(post("/api/webhook")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(payload)))
-                .andExpect(status().isOk())
-                .andExpect(content().string("ignored"));
-
-        verify(codeReviewService, never()).reviewPullRequest(any(), any());
-    }
-
-    @Test
-    void handleWebhook_withPromptParam_passesPromptName() throws Exception {
         WebhookPayload payload = createTestPayload("opened");
 
-        mockMvc.perform(post("/api/webhook")
-                        .param("prompt", "security")
+        mockMvc.perform(post("/api/webhook/test-secret")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(payload)))
                 .andExpect(status().isOk())
-                .andExpect(content().string("review triggered"));
+                .andExpect(content().string("bot disabled"));
 
-        verify(codeReviewService).reviewPullRequest(any(WebhookPayload.class), eq("security"));
+        verify(botWebhookService, never()).reviewPullRequest(any(), any());
+        verify(botService, never()).incrementWebhookCallCount(any());
     }
 
     @Test
-    void handleWebhook_commentWithBotMention_triggersCommand() throws Exception {
-        when(botConfigProperties.getAlias()).thenReturn("@ai_bot");
+    void handleBotWebhook_botNotFound_returns404() throws Exception {
+        when(botService.findByWebhookSecret("unknown-secret")).thenReturn(Optional.empty());
+
+        WebhookPayload payload = createTestPayload("opened");
+
+        mockMvc.perform(post("/api/webhook/unknown-secret")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload)))
+                .andExpect(status().isNotFound());
+
+        verify(botWebhookService, never()).reviewPullRequest(any(), any());
+    }
+
+    @Test
+    void handleBotWebhook_commentWithBotMention_triggersCommand() throws Exception {
+        Bot bot = createTestBot();
+        when(botService.findByWebhookSecret("test-secret")).thenReturn(Optional.of(bot));
+        when(botWebhookService.getBotAlias(bot)).thenReturn("@ai_bot");
 
         String payload = """
                 {
@@ -143,18 +148,20 @@ class GiteaWebhookControllerTest {
                 }
                 """;
 
-        mockMvc.perform(post("/api/webhook")
+        mockMvc.perform(post("/api/webhook/test-secret")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(payload))
                 .andExpect(status().isOk())
                 .andExpect(content().string("command received"));
 
-        verify(codeReviewService).handleBotCommand(any(WebhookPayload.class), isNull());
+        verify(botWebhookService).handleBotCommand(eq(bot), any(WebhookPayload.class));
     }
 
     @Test
-    void handleWebhook_commentWithoutBotMention_ignored() throws Exception {
-        when(botConfigProperties.getAlias()).thenReturn("@ai_bot");
+    void handleBotWebhook_commentWithoutBotMention_ignored() throws Exception {
+        Bot bot = createTestBot();
+        when(botService.findByWebhookSecret("test-secret")).thenReturn(Optional.of(bot));
+        when(botWebhookService.getBotAlias(bot)).thenReturn("@ai_bot");
 
         String payload = """
                 {
@@ -177,51 +184,20 @@ class GiteaWebhookControllerTest {
                 }
                 """;
 
-        mockMvc.perform(post("/api/webhook")
+        mockMvc.perform(post("/api/webhook/test-secret")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(payload))
                 .andExpect(status().isOk())
                 .andExpect(content().string("ignored"));
 
-        verify(codeReviewService, never()).handleBotCommand(any(), any());
+        verify(botWebhookService, never()).handleBotCommand(any(), any());
     }
 
     @Test
-    void handleWebhook_commentOnNonPrIssue_ignored() throws Exception {
-        when(botConfigProperties.getAlias()).thenReturn("@ai_bot");
-
-        String payload = """
-                {
-                    "action": "created",
-                    "comment": {
-                        "id": 42,
-                        "body": "@ai_bot help",
-                        "user": {"login": "testuser"}
-                    },
-                    "issue": {
-                        "number": 1,
-                        "title": "Not a PR"
-                    },
-                    "repository": {
-                        "name": "testrepo",
-                        "full_name": "testowner/testrepo",
-                        "owner": {"login": "testowner"}
-                    }
-                }
-                """;
-
-        mockMvc.perform(post("/api/webhook")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload))
-                .andExpect(status().isOk())
-                .andExpect(content().string("ignored"));
-
-        verify(codeReviewService, never()).handleBotCommand(any(), any());
-    }
-
-    @Test
-    void handleWebhook_inlineCommentWithBotMention_triggersInlineHandler() throws Exception {
-        when(botConfigProperties.getAlias()).thenReturn("@ai_bot");
+    void handleBotWebhook_inlineCommentWithBotMention_triggersInlineHandler() throws Exception {
+        Bot bot = createTestBot();
+        when(botService.findByWebhookSecret("test-secret")).thenReturn(Optional.of(bot));
+        when(botWebhookService.getBotAlias(bot)).thenReturn("@ai_bot");
 
         String payload = """
                 {
@@ -231,7 +207,6 @@ class GiteaWebhookControllerTest {
                         "body": "@ai_bot explain this code",
                         "user": {"login": "testuser"},
                         "path": "src/main/java/Foo.java",
-                        "diff_hunk": "@@ -10,7 +10,7 @@\\n some code context",
                         "line": 15
                     },
                     "issue": {
@@ -247,97 +222,24 @@ class GiteaWebhookControllerTest {
                 }
                 """;
 
-        mockMvc.perform(post("/api/webhook")
+        mockMvc.perform(post("/api/webhook/test-secret")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(payload))
                 .andExpect(status().isOk())
                 .andExpect(content().string("inline comment response triggered"));
 
-        verify(codeReviewService).handleInlineComment(any(WebhookPayload.class), isNull());
-        verify(codeReviewService, never()).handleBotCommand(any(), any());
+        verify(botWebhookService).handleInlineComment(eq(bot), any(WebhookPayload.class));
     }
 
     @Test
-    void handleWebhook_inlineCommentWithoutBotMention_ignored() throws Exception {
-        when(botConfigProperties.getAlias()).thenReturn("@ai_bot");
+    void handleBotWebhook_reviewSubmitted_triggersReviewHandler() throws Exception {
+        Bot bot = createTestBot();
+        when(botService.findByWebhookSecret("test-secret")).thenReturn(Optional.of(bot));
 
-        String payload = """
-                {
-                    "action": "created",
-                    "comment": {
-                        "id": 55,
-                        "body": "just a regular inline comment",
-                        "user": {"login": "testuser"},
-                        "path": "src/main/java/Foo.java",
-                        "line": 15
-                    },
-                    "issue": {
-                        "number": 3,
-                        "title": "Refactor PR",
-                        "pull_request": {}
-                    },
-                    "repository": {
-                        "name": "testrepo",
-                        "full_name": "testowner/testrepo",
-                        "owner": {"login": "testowner"}
-                    }
-                }
-                """;
-
-        mockMvc.perform(post("/api/webhook")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload))
-                .andExpect(status().isOk())
-                .andExpect(content().string("ignored"));
-
-        verify(codeReviewService, never()).handleInlineComment(any(), any());
-    }
-
-    @Test
-    void handleWebhook_inlineCommentViaPullRequest_triggersInlineHandler() throws Exception {
-        when(botConfigProperties.getAlias()).thenReturn("@ai_bot");
-
-        String payload = """
-                {
-                    "action": "created",
-                    "comment": {
-                        "id": 56,
-                        "body": "@ai_bot what does this do?",
-                        "user": {"login": "testuser"},
-                        "path": "src/main/java/Bar.java",
-                        "diff_hunk": "@@ -1,5 +1,5 @@\\n code",
-                        "line": 3,
-                        "pull_request_review_id": 10
-                    },
-                    "pull_request": {
-                        "number": 7,
-                        "title": "Feature PR"
-                    },
-                    "repository": {
-                        "name": "testrepo",
-                        "full_name": "testowner/testrepo",
-                        "owner": {"login": "testowner"}
-                    }
-                }
-                """;
-
-        mockMvc.perform(post("/api/webhook")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload))
-                .andExpect(status().isOk())
-                .andExpect(content().string("inline comment response triggered"));
-
-        verify(codeReviewService).handleInlineComment(any(WebhookPayload.class), isNull());
-    }
-
-    @Test
-    void handleWebhook_reviewSubmitted_triggersReviewHandler() throws Exception {
         String payload = """
                 {
                     "action": "reviewed",
-                    "number": 2,
                     "pull_request": {
-                        "id": 2,
                         "number": 2,
                         "title": "Test PR"
                     },
@@ -356,92 +258,20 @@ class GiteaWebhookControllerTest {
                 }
                 """;
 
-        mockMvc.perform(post("/api/webhook")
+        mockMvc.perform(post("/api/webhook/test-secret")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(payload))
                 .andExpect(status().isOk())
                 .andExpect(content().string("review comments processing triggered"));
 
-        verify(codeReviewService).handleReviewSubmitted(any(WebhookPayload.class), isNull());
+        verify(botWebhookService).handleReviewSubmitted(eq(bot), any(WebhookPayload.class));
     }
 
     @Test
-    void handleWebhook_reviewSubmittedWithPrompt_passesPromptName() throws Exception {
-        String payload = """
-                {
-                    "action": "reviewed",
-                    "number": 2,
-                    "pull_request": {
-                        "id": 2,
-                        "number": 2,
-                        "title": "Test PR"
-                    },
-                    "repository": {
-                        "name": "testrepo",
-                        "full_name": "testowner/testrepo",
-                        "owner": {"login": "testowner"}
-                    },
-                    "sender": {
-                        "login": "tom"
-                    },
-                    "review": {
-                        "type": "pull_request_review_comment",
-                        "content": ""
-                    }
-                }
-                """;
-
-        mockMvc.perform(post("/api/webhook")
-                        .param("prompt", "security")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload))
-                .andExpect(status().isOk())
-                .andExpect(content().string("review comments processing triggered"));
-
-        verify(codeReviewService).handleReviewSubmitted(any(WebhookPayload.class), eq("security"));
-    }
-
-    @Test
-    void handleWebhook_botSender_ignored() throws Exception {
-        when(botConfigProperties.getUsername()).thenReturn("ai_bot");
-
-        String payload = """
-                {
-                    "action": "created",
-                    "comment": {
-                        "id": 99,
-                        "body": "@ai_bot this is the bot's own comment",
-                        "user": {"login": "ai_bot"}
-                    },
-                    "issue": {
-                        "number": 1,
-                        "title": "Test PR",
-                        "pull_request": {}
-                    },
-                    "repository": {
-                        "name": "testrepo",
-                        "full_name": "testowner/testrepo",
-                        "owner": {"login": "testowner"}
-                    },
-                    "sender": {
-                        "login": "ai_bot"
-                    }
-                }
-                """;
-
-        mockMvc.perform(post("/api/webhook")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload))
-                .andExpect(status().isOk())
-                .andExpect(content().string("ignored"));
-
-        verify(codeReviewService, never()).handleBotCommand(any(), any());
-        verify(codeReviewService, never()).reviewPullRequest(any(), any());
-    }
-
-    @Test
-    void handleWebhook_botSenderOnPrOpened_ignored() throws Exception {
-        when(botConfigProperties.getUsername()).thenReturn("ai_bot");
+    void handleBotWebhook_botSender_ignored() throws Exception {
+        Bot bot = createTestBot();
+        when(botService.findByWebhookSecret("test-secret")).thenReturn(Optional.of(bot));
+        when(botWebhookService.isBotUser(eq(bot), any())).thenReturn(true);
 
         String payload = """
                 {
@@ -461,199 +291,65 @@ class GiteaWebhookControllerTest {
                 }
                 """;
 
-        mockMvc.perform(post("/api/webhook")
+        mockMvc.perform(post("/api/webhook/test-secret")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(payload))
                 .andExpect(status().isOk())
                 .andExpect(content().string("ignored"));
 
-        verify(codeReviewService, never()).reviewPullRequest(any(), any());
+        verify(botWebhookService, never()).reviewPullRequest(any(), any());
     }
 
     @Test
-    void handleWebhook_botCommentUser_ignored() throws Exception {
-        when(botConfigProperties.getUsername()).thenReturn("ai_bot");
-        when(botConfigProperties.getAlias()).thenReturn("@ai_bot");
+    void handleBotWebhook_noPullRequest_ignored() throws Exception {
+        Bot bot = createTestBot();
+        when(botService.findByWebhookSecret("test-secret")).thenReturn(Optional.of(bot));
 
-        String payload = """
-                {
-                    "action": "created",
-                    "comment": {
-                        "id": 100,
-                        "body": "## 🤖 Bot Response with @ai_bot mention",
-                        "user": {"login": "ai_bot"},
-                        "path": "src/Foo.java",
-                        "line": 10
-                    },
-                    "issue": {
-                        "number": 1,
-                        "title": "Test PR",
-                        "pull_request": {}
-                    },
-                    "repository": {
-                        "name": "testrepo",
-                        "full_name": "testowner/testrepo",
-                        "owner": {"login": "testowner"}
-                    },
-                    "sender": {
-                        "login": "ai_bot"
-                    }
-                }
-                """;
+        WebhookPayload payload = new WebhookPayload();
+        payload.setAction("push");
 
-        mockMvc.perform(post("/api/webhook")
+        mockMvc.perform(post("/api/webhook/test-secret")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload))
+                        .content(objectMapper.writeValueAsString(payload)))
                 .andExpect(status().isOk())
                 .andExpect(content().string("ignored"));
 
-        verify(codeReviewService, never()).handleInlineComment(any(), any());
-        verify(codeReviewService, never()).handleBotCommand(any(), any());
+        verify(botWebhookService, never()).reviewPullRequest(any(), any());
     }
 
-    @Test
-    void handleWebhook_issueAssignedToBot_agentEnabled_triggersAgent() throws Exception {
-        when(botConfigProperties.getUsername()).thenReturn("ai_bot");
-        when(agentConfigProperties.isEnabled()).thenReturn(true);
-        when(agentConfigProperties.getAllowedRepos()).thenReturn(java.util.List.of());
+    private Bot createTestBot() {
+        Bot bot = new Bot();
+        bot.setId(1L);
+        bot.setName("Test Bot");
+        bot.setUsername("ai_bot");
+        bot.setWebhookSecret("test-secret");
+        bot.setEnabled(true);
 
-        String payload = """
-                {
-                    "action": "assigned",
-                    "issue": {
-                        "number": 42,
-                        "title": "Add feature X",
-                        "body": "Implement feature X",
-                        "assignee": {
-                            "login": "ai_bot"
-                        }
-                    },
-                    "repository": {
-                        "name": "testrepo",
-                        "full_name": "testowner/testrepo",
-                        "owner": {"login": "testowner"}
-                    },
-                    "sender": {
-                        "login": "someuser"
-                    }
-                }
-                """;
+        AiIntegration ai = new AiIntegration();
+        ai.setId(1L);
+        ai.setName("Test AI");
+        ai.setProviderType("anthropic");
+        ai.setApiUrl("http://localhost:8081");
+        ai.setModel("claude-sonnet-4-20250514");
+        ai.setMaxTokens(4096);
+        ai.setMaxDiffCharsPerChunk(120000);
+        ai.setMaxDiffChunks(8);
+        ai.setRetryTruncatedChunkChars(60000);
+        ai.setCreatedAt(Instant.now());
+        ai.setUpdatedAt(Instant.now());
+        bot.setAiIntegration(ai);
 
-        mockMvc.perform(post("/api/webhook")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload))
-                .andExpect(status().isOk())
-                .andExpect(content().string("agent triggered"));
+        GitIntegration git = new GitIntegration();
+        git.setId(1L);
+        git.setName("Test Git");
+        git.setProviderType("gitea");
+        git.setUrl("http://localhost:3000");
+        git.setToken("test-token");
+        git.setCreatedAt(Instant.now());
+        git.setUpdatedAt(Instant.now());
+        bot.setGitIntegration(git);
 
-        verify(issueImplementationService).handleIssueAssigned(any(WebhookPayload.class));
-    }
-
-    @Test
-    void handleWebhook_issueAssignedToBot_agentDisabled_ignored() throws Exception {
-        when(agentConfigProperties.isEnabled()).thenReturn(false);
-
-        String payload = """
-                {
-                    "action": "assigned",
-                    "issue": {
-                        "number": 42,
-                        "title": "Add feature X",
-                        "body": "Implement feature X"
-                    },
-                    "repository": {
-                        "name": "testrepo",
-                        "full_name": "testowner/testrepo",
-                        "owner": {"login": "testowner"}
-                    },
-                    "assignee": {
-                        "login": "ai_bot"
-                    },
-                    "sender": {
-                        "login": "someuser"
-                    }
-                }
-                """;
-
-        mockMvc.perform(post("/api/webhook")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload))
-                .andExpect(status().isOk())
-                .andExpect(content().string("ignored"));
-
-        verify(issueImplementationService, never()).handleIssueAssigned(any());
-    }
-
-    @Test
-    void handleWebhook_issueAssignedToOtherUser_ignored() throws Exception {
-        when(botConfigProperties.getUsername()).thenReturn("ai_bot");
-        when(agentConfigProperties.isEnabled()).thenReturn(true);
-
-        String payload = """
-                {
-                    "action": "assigned",
-                    "issue": {
-                        "number": 42,
-                        "title": "Add feature X",
-                        "body": "Implement feature X"
-                    },
-                    "repository": {
-                        "name": "testrepo",
-                        "full_name": "testowner/testrepo",
-                        "owner": {"login": "testowner"}
-                    },
-                    "assignee": {
-                        "login": "other_user"
-                    },
-                    "sender": {
-                        "login": "someuser"
-                    }
-                }
-                """;
-
-        mockMvc.perform(post("/api/webhook")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload))
-                .andExpect(status().isOk())
-                .andExpect(content().string("ignored"));
-
-        verify(issueImplementationService, never()).handleIssueAssigned(any());
-    }
-
-    @Test
-    void handleWebhook_issueAssignedToBot_repoNotAllowed_ignored() throws Exception {
-        when(botConfigProperties.getUsername()).thenReturn("ai_bot");
-        when(agentConfigProperties.isEnabled()).thenReturn(true);
-        when(agentConfigProperties.getAllowedRepos()).thenReturn(java.util.List.of("other/repo"));
-
-        String payload = """
-                {
-                    "action": "assigned",
-                    "issue": {
-                        "number": 42,
-                        "title": "Add feature X",
-                        "body": "Implement feature X"
-                    },
-                    "repository": {
-                        "name": "testrepo",
-                        "full_name": "testowner/testrepo",
-                        "owner": {"login": "testowner"}
-                    },
-                    "assignee": {
-                        "login": "ai_bot"
-                    },
-                    "sender": {
-                        "login": "someuser"
-                    }
-                }
-                """;
-
-        mockMvc.perform(post("/api/webhook")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload))
-                .andExpect(status().isOk())
-                .andExpect(content().string("ignored"));
-
-        verify(issueImplementationService, never()).handleIssueAssigned(any());
+        return bot;
     }
 
     private WebhookPayload createTestPayload(String action) {

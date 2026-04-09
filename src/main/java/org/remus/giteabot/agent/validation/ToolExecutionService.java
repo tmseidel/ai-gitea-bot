@@ -3,7 +3,6 @@ package org.remus.giteabot.agent.validation;
 import lombok.extern.slf4j.Slf4j;
 import org.remus.giteabot.agent.model.FileChange;
 import org.remus.giteabot.config.AgentConfigProperties;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
@@ -21,15 +20,9 @@ import java.util.concurrent.TimeUnit;
 public class ToolExecutionService {
 
     private final AgentConfigProperties agentConfig;
-    private final String giteaUrl;
-    private final String giteaToken;
 
-    public ToolExecutionService(AgentConfigProperties agentConfig,
-                                @Value("${gitea.url}") String giteaUrl,
-                                @Value("${gitea.token}") String giteaToken) {
+    public ToolExecutionService(AgentConfigProperties agentConfig) {
         this.agentConfig = agentConfig;
-        this.giteaUrl = giteaUrl;
-        this.giteaToken = giteaToken;
     }
 
     /**
@@ -47,17 +40,19 @@ public class ToolExecutionService {
      * @param repo        Repository name
      * @param branch      The branch to clone
      * @param fileChanges The file changes to apply
+     * @param giteaUrl    The Gitea server URL
+     * @param giteaToken  The Gitea API token
      * @return WorkspaceResult containing the path or error details
      */
     public WorkspaceResult prepareWorkspace(String owner, String repo, String branch,
-                                  List<FileChange> fileChanges) {
+                                  List<FileChange> fileChanges, String giteaUrl, String giteaToken) {
         try {
             // Create temp directory for clone
             Path tempDir = Files.createTempDirectory("agent-validation-");
             log.info("Cloning repository to {} for validation", tempDir);
 
             // Clone using git command
-            String cloneUrl = buildCloneUrl(owner, repo);
+            String cloneUrl = buildCloneUrl(owner, repo, giteaUrl, giteaToken);
             CommandResult cloneResult = runCommand(tempDir.getParent().toFile(),
                     new String[]{"git", "clone", "--depth", "1", "--branch", branch, cloneUrl, tempDir.getFileName().toString()},
                     60);
@@ -196,7 +191,7 @@ public class ToolExecutionService {
         }
     }
 
-    private String buildCloneUrl(String owner, String repo) {
+    private String buildCloneUrl(String owner, String repo, String giteaUrl, String giteaToken) {
         // Preserve the original protocol (http or https)
         String protocol = giteaUrl.startsWith("https://") ? "https" : "http";
         String baseUrl = giteaUrl.replaceFirst("https?://", "");
