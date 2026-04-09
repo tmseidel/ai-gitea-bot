@@ -39,9 +39,21 @@
                         </div>
 
                         <div class="col-12">
-                            <label for="prompt" class="form-label">Prompt</label>
+                            <label for="prompt" class="form-label">System Prompt</label>
+                            <div class="mb-2">
+                                <label for="promptTemplate" class="form-label text-muted small">Load from template:</label>
+                                <select class="form-select form-select-sm" id="promptTemplate" style="max-width: 300px;">
+                                    <option value="">-- Select a template --</option>
+                                    <option th:each="template : ${promptTemplates}"
+                                            th:value="${template.key}"
+                                            th:text="${template.key}"></option>
+                                </select>
+                            </div>
                             <textarea class="form-control" id="prompt" th:field="*{prompt}"
-                                      rows="5" placeholder="System prompt for the AI bot..."></textarea>
+                                      rows="8" placeholder="System prompt for the AI bot..."></textarea>
+                            <div class="form-text">
+                                The system prompt instructs the AI how to behave during code reviews.
+                            </div>
                         </div>
 
                         <div class="col-md-6">
@@ -92,6 +104,30 @@
                 </form>
             </div>
         </div>
+
+        <script th:inline="javascript">
+            /*<![CDATA[*/
+            const promptTemplates = /*[[${promptTemplates}]]*/ {};
+
+            document.addEventListener('DOMContentLoaded', function() {
+                const templateSelect = document.getElementById('promptTemplate');
+                const promptTextarea = document.getElementById('prompt');
+
+                templateSelect.addEventListener('change', function() {
+                    const selectedTemplate = this.value;
+                    if (selectedTemplate && promptTemplates[selectedTemplate]) {
+                        // Ask for confirmation if there's existing content
+                        if (promptTextarea.value.trim() &&
+                            !confirm('This will replace the current prompt. Continue?')) {
+                            this.value = '';
+                            return;
+                        }
+                        promptTextarea.value = promptTemplates[selectedTemplate];
+                    }
+                });
+            });
+            /*]]>*/
+        </script>
 
     </div>
 </div>

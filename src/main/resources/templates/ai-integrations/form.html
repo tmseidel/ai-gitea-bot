@@ -36,7 +36,8 @@
                         <div class="col-md-6">
                             <label for="apiUrl" class="form-label">API URL</label>
                             <input type="url" class="form-control" id="apiUrl" th:field="*{apiUrl}"
-                                   placeholder="e.g. https://api.openai.com/v1" required/>
+                                   placeholder="e.g. https://api.openai.com" required/>
+                            <div class="form-text" id="apiUrlHint"></div>
                         </div>
                         <div class="col-md-6">
                             <label for="apiKey" class="form-label">API Key</label>
@@ -54,8 +55,18 @@
                         </div>
                         <div class="col-md-6">
                             <label for="model" class="form-label">Model</label>
-                            <input type="text" class="form-control" id="model" th:field="*{model}"
-                                   placeholder="e.g. gpt-4o, claude-3-opus" required/>
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="model" th:field="*{model}"
+                                       placeholder="e.g. gpt-4o, claude-sonnet-4-6" required/>
+                                <button class="btn btn-outline-secondary dropdown-toggle" type="button"
+                                        id="modelDropdownBtn" data-bs-toggle="dropdown" aria-expanded="false"
+                                        style="display: none;">
+                                    Select
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end" id="modelDropdownMenu">
+                                </ul>
+                            </div>
+                            <div class="form-text" id="modelHint"></div>
                         </div>
 
                         <div class="col-md-3">
@@ -91,6 +102,77 @@
                 </form>
             </div>
         </div>
+
+        <script th:inline="javascript">
+            /*<![CDATA[*/
+            const defaultApiUrls = /*[[${defaultApiUrls}]]*/ {};
+            const suggestedModels = /*[[${suggestedModels}]]*/ {};
+            const isEditMode = /*[[${integration.id != null}]]*/ false;
+
+            document.addEventListener('DOMContentLoaded', function() {
+                const providerSelect = document.getElementById('providerType');
+                const apiUrlInput = document.getElementById('apiUrl');
+                const apiUrlHint = document.getElementById('apiUrlHint');
+                const modelInput = document.getElementById('model');
+                const modelDropdownBtn = document.getElementById('modelDropdownBtn');
+                const modelDropdownMenu = document.getElementById('modelDropdownMenu');
+                const modelHint = document.getElementById('modelHint');
+
+                function updateProviderDefaults() {
+                    const provider = providerSelect.value;
+
+                    // Update API URL hint and set default if empty (only for new integrations)
+                    if (defaultApiUrls[provider]) {
+                        apiUrlHint.textContent = 'Default: ' + defaultApiUrls[provider];
+                        if (!isEditMode && (!apiUrlInput.value || apiUrlInput.value === defaultApiUrls[providerSelect.dataset.previousValue])) {
+                            apiUrlInput.value = defaultApiUrls[provider];
+                        }
+                    } else {
+                        apiUrlHint.textContent = '';
+                    }
+
+                    // Update model dropdown
+                    const models = suggestedModels[provider] || [];
+                    modelDropdownMenu.innerHTML = '';
+
+                    if (models.length > 0) {
+                        modelDropdownBtn.style.display = 'block';
+                        modelHint.textContent = 'Suggested models: ' + models.join(', ');
+                        models.forEach(function(modelName) {
+                            const li = document.createElement('li');
+                            const a = document.createElement('a');
+                            a.className = 'dropdown-item';
+                            a.href = '#';
+                            a.textContent = modelName;
+                            a.addEventListener('click', function(e) {
+                                e.preventDefault();
+                                modelInput.value = modelName;
+                            });
+                            li.appendChild(a);
+                            modelDropdownMenu.appendChild(li);
+                        });
+                    } else {
+                        modelDropdownBtn.style.display = 'none';
+                        if (provider === 'ollama' || provider === 'llamacpp') {
+                            modelHint.textContent = 'Enter the model name configured in your local ' + provider + ' instance';
+                        } else {
+                            modelHint.textContent = '';
+                        }
+                    }
+
+                    providerSelect.dataset.previousValue = provider;
+                }
+
+                providerSelect.addEventListener('change', updateProviderDefaults);
+
+                // Initialize on page load
+                if (providerSelect.value) {
+                    providerSelect.dataset.previousValue = providerSelect.value;
+                    updateProviderDefaults();
+                }
+            });
+            /*]]>*/
+        </script>
 
     </div>
 </div>

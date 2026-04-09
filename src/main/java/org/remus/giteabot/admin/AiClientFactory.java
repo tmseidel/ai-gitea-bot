@@ -2,10 +2,8 @@ package org.remus.giteabot.admin;
 
 import lombok.extern.slf4j.Slf4j;
 import org.remus.giteabot.ai.AiClient;
-import org.remus.giteabot.ai.anthropic.AnthropicAiClient;
-import org.remus.giteabot.ai.llamacpp.LlamaCppClient;
-import org.remus.giteabot.ai.ollama.OllamaClient;
-import org.remus.giteabot.ai.openai.OpenAiClient;
+import org.remus.giteabot.ai.AiProviderMetadata;
+import org.remus.giteabot.ai.AiProviderRegistry;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
@@ -23,12 +21,15 @@ import java.util.concurrent.ConcurrentMap;
 public class AiClientFactory {
 
     private final AiIntegrationService aiIntegrationService;
+    private final AiProviderRegistry providerRegistry;
 
     /** Cache key = integrationId, value = (updatedAt-millis, client). */
     private final ConcurrentMap<Long, CachedClient> cache = new ConcurrentHashMap<>();
 
-    public AiClientFactory(AiIntegrationService aiIntegrationService) {
+    public AiClientFactory(AiIntegrationService aiIntegrationService,
+                           AiProviderRegistry providerRegistry) {
         this.aiIntegrationService = aiIntegrationService;
+        this.providerRegistry = providerRegistry;
     }
 
     /**
@@ -44,7 +45,8 @@ public class AiClientFactory {
 
         AiClient client = buildClient(integration);
         cache.put(integration.getId(), new CachedClient(updatedMillis, client));
-        log.info("Built new AiClient for integration '{}' (provider={})", integration.getName(), integration.getProviderType());
+        log.info("Built new AiClient for integration '{}' (provider={})",
+                integration.getName(), integration.getProviderType());
         return client;
     }
 
@@ -57,53 +59,14 @@ public class AiClientFactory {
 
     private AiClient buildClient(AiIntegration integration) {
         String providerType = integration.getProviderType();
-        String apiUrl = integration.getApiUrl();
-        String decryptedApiKey = aiIntegrationService.decryptApiKey(integration);
-        String model = integration.getModel();
-        int maxTokens = integration.getMaxTokens();
-        int maxDiffCharsPerChunk = integration.getMaxDiffCharsPerChunk();
-        int maxDiffChunks = integration.getMaxDiffChunks();
-        int retryTruncatedChunkChars = integration.getRetryTruncatedChunkChars();
+        AiProviderMetadata provider = providerRegistry.getProviderOrThrow(providerType);
 
-        return switch (providerType) {
-            case "anthropic" -> {
-                String apiVersion = integration.getApiVersion() != null ? integration.getApiVersion() : "2023-06-01";
-                RestClient restClient = RestClient.builder()
-                        .baseUrl(apiUrl)
-                        .defaultHeader("x-api-key", decryptedApiKey)
-                        .defaultHeader("anthropic-version", apiVersion)
-                        .defaultHeader("Content-Type", "application/json")
-                        .build();
-                yield new AnthropicAiClient(restClient, model, maxTokens,
-                        maxDiffCharsPerChunk, maxDiffChunks, retryTruncatedChunkChars);
-            }
-            case "openai" -> {
-                RestClient restClient = RestClient.builder()
-                        .baseUrl(apiUrl)
-                        .defaultHeader("Authorization", "Bearer " + decryptedApiKey)
-                        .defaultHeader("Content-Type", "application/json")
-                        .build();
-                yield new OpenAiClient(restClient, model, maxTokens,
-                        maxDiffCharsPerChunk, maxDiffChunks, retryTruncatedChunkChars);
-            }
-            case "ollama" -> {
-                RestClient restClient = RestClient.builder()
-                        .baseUrl(apiUrl)
-                        .defaultHeader("Content-Type", "application/json")
-                        .build();
-                yield new OllamaClient(restClient, model, maxTokens,
-                        maxDiffCharsPerChunk, maxDiffChunks, retryTruncatedChunkChars);
-            }
-            case "llamacpp" -> {
-                RestClient restClient = RestClient.builder()
-                        .baseUrl(apiUrl)
-                        .defaultHeader("Content-Type", "application/json")
-                        .build();
-                yield new LlamaCppClient(restClient, model, maxTokens,
-                        maxDiffCharsPerChunk, maxDiffChunks, retryTruncatedChunkChars);
-            }
-            default -> throw new IllegalArgumentException("Unknown AI provider type: " + providerType);
-        };
+        String decryptedApiKey = provider.requiresApiKey()
+                ? aiIntegrationService.decryptApiKey(integration)
+                : null;
+
+        RestClient restClient = provider.buildRestClient(integration, decryptedApiKey);
+        return provider.createClient(restClient, integration);
     }
 
     private record CachedClient(long updatedAtMillis, AiClient client) {}

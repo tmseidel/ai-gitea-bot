@@ -26,6 +26,8 @@ services:
       DATABASE_URL: jdbc:postgresql://db:5432/giteabot
       DATABASE_USERNAME: ${DATABASE_USERNAME:-giteabot}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:-giteabot}
+      # Encryption key for API keys stored in database (optional, but recommended for production)
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-}
     volumes:
       - ./prompts:/app/prompts:ro
     depends_on:
