@@ -17,4 +17,12 @@ public interface AiClient {
      */
     String chat(List<AiMessage> conversationHistory, String newUserMessage,
                 String systemPrompt, String modelOverride);
+
+    /**
+     * Sends a multi-turn conversation to the AI provider with a custom max tokens limit.
+     *
+     * @param maxTokensOverride Custom max tokens limit (if null, uses the default)
+     */
+    String chat(List<AiMessage> conversationHistory, String newUserMessage,
+                String systemPrompt, String modelOverride, Integer maxTokensOverride);
 }

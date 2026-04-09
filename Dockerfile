@@ -14,9 +14,43 @@ RUN mvn clean package -DskipTests -o
 # --- Runtime image ---
 FROM eclipse-temurin:21-jre-alpine
 
-RUN apk add --no-cache ca-certificates curl && \
+# Install build tools for AI agent validation
+# This allows the agent to compile and validate code in various languages
+RUN apk add --no-cache \
+    # Base utilities
+    ca-certificates curl git bash \
+    # Java/Maven/Gradle
+    maven openjdk21-jdk \
+    # Node.js / npm (for JavaScript/TypeScript projects)
+    nodejs npm \
+    # Python
+    python3 py3-pip \
+    # Go
+    go \
+    # Rust (via rustup in a separate step)
+    # C/C++
+    gcc g++ make cmake \
+    # Ruby
+    ruby ruby-bundler \
+    && \
+    # Create app user
     addgroup -g 1000 appgroup && adduser -u 1000 -G appgroup -D appuser && \
     mkdir -p /app /app/prompts && chown -R appuser:appgroup /app
+
+# Install Rust for appuser (optional, can be removed if not needed)
+USER appuser
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+ENV PATH="/home/appuser/.cargo/bin:${PATH}"
+
+USER root
+
+# Set JAVA_HOME for Maven
+ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+# Set Go path
+ENV GOPATH=/home/appuser/go
+ENV PATH="${GOPATH}/bin:/usr/lib/go/bin:${PATH}"
 
 WORKDIR /app
 COPY --from=build --chown=appuser:appgroup /app/target/*.jar app.jar

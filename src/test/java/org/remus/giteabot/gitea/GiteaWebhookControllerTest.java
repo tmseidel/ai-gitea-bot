@@ -2,6 +2,8 @@ package org.remus.giteabot.gitea;
 
 import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.remus.giteabot.agent.IssueImplementationService;
+import org.remus.giteabot.config.AgentConfigProperties;
 import org.remus.giteabot.config.BotConfigProperties;
 import org.remus.giteabot.gitea.model.WebhookPayload;
 import org.remus.giteabot.review.CodeReviewService;
@@ -30,7 +32,13 @@ class GiteaWebhookControllerTest {
     private CodeReviewService codeReviewService;
 
     @MockitoBean
+    private IssueImplementationService issueImplementationService;
+
+    @MockitoBean
     private BotConfigProperties botConfigProperties;
+
+    @MockitoBean
+    private AgentConfigProperties agentConfigProperties;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -493,6 +501,151 @@ class GiteaWebhookControllerTest {
 
         verify(codeReviewService, never()).handleInlineComment(any(), any());
         verify(codeReviewService, never()).handleBotCommand(any(), any());
+    }
+
+    @Test
+    void handleWebhook_issueAssignedToBot_agentEnabled_triggersAgent() throws Exception {
+        when(botConfigProperties.getUsername()).thenReturn("ai_bot");
+        when(agentConfigProperties.isEnabled()).thenReturn(true);
+        when(agentConfigProperties.getAllowedRepos()).thenReturn(java.util.List.of());
+
+        String payload = """
+                {
+                    "action": "assigned",
+                    "issue": {
+                        "number": 42,
+                        "title": "Add feature X",
+                        "body": "Implement feature X",
+                        "assignee": {
+                            "login": "ai_bot"
+                        }
+                    },
+                    "repository": {
+                        "name": "testrepo",
+                        "full_name": "testowner/testrepo",
+                        "owner": {"login": "testowner"}
+                    },
+                    "sender": {
+                        "login": "someuser"
+                    }
+                }
+                """;
+
+        mockMvc.perform(post("/api/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk())
+                .andExpect(content().string("agent triggered"));
+
+        verify(issueImplementationService).handleIssueAssigned(any(WebhookPayload.class));
+    }
+
+    @Test
+    void handleWebhook_issueAssignedToBot_agentDisabled_ignored() throws Exception {
+        when(agentConfigProperties.isEnabled()).thenReturn(false);
+
+        String payload = """
+                {
+                    "action": "assigned",
+                    "issue": {
+                        "number": 42,
+                        "title": "Add feature X",
+                        "body": "Implement feature X"
+                    },
+                    "repository": {
+                        "name": "testrepo",
+                        "full_name": "testowner/testrepo",
+                        "owner": {"login": "testowner"}
+                    },
+                    "assignee": {
+                        "login": "ai_bot"
+                    },
+                    "sender": {
+                        "login": "someuser"
+                    }
+                }
+                """;
+
+        mockMvc.perform(post("/api/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk())
+                .andExpect(content().string("ignored"));
+
+        verify(issueImplementationService, never()).handleIssueAssigned(any());
+    }
+
+    @Test
+    void handleWebhook_issueAssignedToOtherUser_ignored() throws Exception {
+        when(botConfigProperties.getUsername()).thenReturn("ai_bot");
+        when(agentConfigProperties.isEnabled()).thenReturn(true);
+
+        String payload = """
+                {
+                    "action": "assigned",
+                    "issue": {
+                        "number": 42,
+                        "title": "Add feature X",
+                        "body": "Implement feature X"
+                    },
+                    "repository": {
+                        "name": "testrepo",
+                        "full_name": "testowner/testrepo",
+                        "owner": {"login": "testowner"}
+                    },
+                    "assignee": {
+                        "login": "other_user"
+                    },
+                    "sender": {
+                        "login": "someuser"
+                    }
+                }
+                """;
+
+        mockMvc.perform(post("/api/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk())
+                .andExpect(content().string("ignored"));
+
+        verify(issueImplementationService, never()).handleIssueAssigned(any());
+    }
+
+    @Test
+    void handleWebhook_issueAssignedToBot_repoNotAllowed_ignored() throws Exception {
+        when(botConfigProperties.getUsername()).thenReturn("ai_bot");
+        when(agentConfigProperties.isEnabled()).thenReturn(true);
+        when(agentConfigProperties.getAllowedRepos()).thenReturn(java.util.List.of("other/repo"));
+
+        String payload = """
+                {
+                    "action": "assigned",
+                    "issue": {
+                        "number": 42,
+                        "title": "Add feature X",
+                        "body": "Implement feature X"
+                    },
+                    "repository": {
+                        "name": "testrepo",
+                        "full_name": "testowner/testrepo",
+                        "owner": {"login": "testowner"}
+                    },
+                    "assignee": {
+                        "login": "ai_bot"
+                    },
+                    "sender": {
+                        "login": "someuser"
+                    }
+                }
+                """;
+
+        mockMvc.perform(post("/api/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk())
+                .andExpect(content().string("ignored"));
+
+        verify(issueImplementationService, never()).handleIssueAssigned(any());
     }
 
     private WebhookPayload createTestPayload(String action) {

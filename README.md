@@ -36,6 +36,7 @@ Choose the AI provider that fits your needs:
 
 ### More Features
 
+- **Issue Implementation Agent** — Assign the bot to an issue and it will autonomously implement changes and create a PR (see [Agent Documentation](doc/AGENT.md))
 - **Session Management** — Maintains conversation history per PR, persisted in a database, enabling context-aware follow-up reviews
 - **Configurable System Prompts** — Define multiple review profiles (security audit, performance review, etc.) via markdown files, selectable per webhook
 - **Per-Prompt Overrides** — Each prompt profile can override the AI model and Gitea API token
@@ -100,6 +101,7 @@ The bot receives webhooks from Gitea, fetches PR diffs, sends them to the config
 | Document | Description |
 |---|---|
 | [Architecture](doc/ARCHITECTURE.md) | Component diagrams, request flows, webhook routing |
+| [Agent](doc/AGENT.md) | Autonomous issue implementation agent setup and usage |
 | [Gitea Setup](doc/GITEA_SETUP.md) | Bot user creation, permissions, API tokens, webhook configuration |
 | [Deployment](doc/DEPLOYMENT.md) | Docker Compose deployment, environment variables, prompt configuration |
 | [Using Ollama](doc/OLLAMA.md) | Running with local LLMs via Ollama |
