@@ -7,16 +7,20 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.remus.giteabot.agent.model.FileChange;
 import org.remus.giteabot.agent.model.ImplementationPlan;
+import org.remus.giteabot.agent.session.AgentSession;
 import org.remus.giteabot.agent.session.AgentSessionService;
 import org.remus.giteabot.agent.validation.ToolExecutionService;
 import org.remus.giteabot.ai.AiClient;
+import org.remus.giteabot.ai.AiMessage;
 import org.remus.giteabot.config.AgentConfigProperties;
 import org.remus.giteabot.config.PromptService;
 import org.remus.giteabot.repository.RepositoryApiClient;
 import org.remus.giteabot.gitea.model.WebhookPayload;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
@@ -481,6 +485,105 @@ class IssueImplementationServiceTest {
         assertThat(result).contains("README.md");
         // src/Other.java is not mentioned in the issue, not a config file
         assertThat(result).doesNotContain("src/Other.java");
+    }
+
+    @Test
+    void handleIssueComment_multipleFileRequestRounds_fetchesAllRequestedFiles() {
+        WebhookPayload payload = createCommentPayload("Please also update the config");
+
+        AgentSession session = new AgentSession("testowner", "testrepo", 42L, "Add new feature X");
+        session.setBranchName("ai-agent/issue-42");
+        session.setPrNumber(1L);
+        session.setStatus(AgentSession.AgentSessionStatus.PR_CREATED);
+
+        when(sessionService.getSessionByIssue("testowner", "testrepo", 42L))
+                .thenReturn(Optional.of(session));
+        when(repositoryClient.getDefaultBranch("testowner", "testrepo")).thenReturn("main");
+        when(promptService.getSystemPrompt("agent")).thenReturn("You are an agent");
+        when(sessionService.toAiMessages(any())).thenReturn(
+                new ArrayList<>(List.of(AiMessage.builder().role("user").content("Please also update the config").build())));
+
+        // First AI response: request files (round 1)
+        String firstResponse = """
+                ```json
+                {
+                  "summary": "Need to see config",
+                  "requestFiles": ["src/Config.java"]
+                }
+                ```
+                """;
+        // Second AI response: request more files (round 2)
+        String secondResponse = """
+                ```json
+                {
+                  "summary": "Need to see model too",
+                  "requestFiles": ["src/Model.java"]
+                }
+                ```
+                """;
+        // Third AI response: actual implementation
+        String thirdResponse = """
+                ```json
+                {
+                  "summary": "Updated config",
+                  "fileChanges": [
+                    {
+                      "path": "src/Config.java",
+                      "operation": "UPDATE",
+                      "content": "class Config { int x; }"
+                    }
+                  ]
+                }
+                ```
+                """;
+
+        when(aiClient.chat(anyList(), anyString(), anyString(), isNull(), anyInt()))
+                .thenReturn(firstResponse, secondResponse, thirdResponse);
+
+        when(repositoryClient.getFileContent("testowner", "testrepo", "src/Config.java", "ai-agent/issue-42"))
+                .thenReturn("class Config {}");
+        when(repositoryClient.getFileContent("testowner", "testrepo", "src/Model.java", "ai-agent/issue-42"))
+                .thenReturn("class Model {}");
+        when(repositoryClient.getFileSha("testowner", "testrepo", "src/Config.java", "ai-agent/issue-42"))
+                .thenReturn("abc123");
+
+        service.handleIssueComment(payload);
+
+        // Verify file contents were fetched for both rounds
+        verify(repositoryClient).getFileContent("testowner", "testrepo", "src/Config.java", "ai-agent/issue-42");
+        verify(repositoryClient).getFileContent("testowner", "testrepo", "src/Model.java", "ai-agent/issue-42");
+        // Verify AI was called 3 times (initial + 2 file request rounds)
+        verify(aiClient, times(3)).chat(anyList(), anyString(), anyString(), isNull(), anyInt());
+        // Verify file change was applied
+        verify(repositoryClient).createOrUpdateFile(eq("testowner"), eq("testrepo"), eq("src/Config.java"),
+                eq("class Config { int x; }"), anyString(), eq("ai-agent/issue-42"), eq("abc123"));
+    }
+
+    private WebhookPayload createCommentPayload(String commentBody) {
+        WebhookPayload payload = new WebhookPayload();
+        payload.setAction("created");
+
+        WebhookPayload.Comment comment = new WebhookPayload.Comment();
+        comment.setId(100L);
+        comment.setBody(commentBody);
+        payload.setComment(comment);
+
+        WebhookPayload.Issue issue = new WebhookPayload.Issue();
+        issue.setNumber(42L);
+        issue.setTitle("Add new feature X");
+        issue.setBody("Please implement feature X that does Y and Z");
+        payload.setIssue(issue);
+
+        WebhookPayload.Owner owner = new WebhookPayload.Owner();
+        owner.setLogin("testowner");
+
+        WebhookPayload.Repository repository = new WebhookPayload.Repository();
+        repository.setName("testrepo");
+        repository.setFullName("testowner/testrepo");
+        repository.setOwner(owner);
+        payload.setRepository(repository);
+
+        return payload;
     }
 
     private WebhookPayload createIssuePayload() {

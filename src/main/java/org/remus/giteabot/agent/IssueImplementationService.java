@@ -733,13 +733,18 @@ public class IssueImplementationService {
             // Parse AI response
             ImplementationPlan plan = parseAiResponse(aiResponse);
 
-            // Handle file requests - AI wants to see more files
-            if (plan != null && plan.hasFileRequests()) {
-                log.info("AI requesting {} additional files", plan.getRequestFiles().size());
+            // Handle file requests - AI wants to see more files (loop up to 3 rounds)
+            int maxFileRequestRounds = 3;
+            int fileRequestRounds = 0;
+            while (plan != null && plan.hasFileRequests() && fileRequestRounds < maxFileRequestRounds) {
+                fileRequestRounds++;
+                log.info("AI requesting {} additional files (round {}/{})",
+                        plan.getRequestFiles().size(), fileRequestRounds, maxFileRequestRounds);
                 String fileContext = fetchSpecificFiles(owner, repo, workingBranch, plan.getRequestFiles());
 
                 // Send files and ask AI to continue
-                String filesMessage = "Here are the requested files:\n" + fileContext + "\n\nPlease continue.";
+                String filesMessage = "Here are the requested files:\n" + fileContext +
+                        "\n\nPlease continue with the implementation. Output JSON per system prompt format.";
                 sessionService.addMessage(session, "user", filesMessage);
 
                 List<AiMessage> updatedHistory = sessionService.toAiMessages(session);
