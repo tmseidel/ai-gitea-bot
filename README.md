@@ -2,7 +2,7 @@
 
 ![AI Code Review Bot](doc/screenshot_small.png)
 
-A Spring Boot application that connects your Git hosting platform with AI providers to deliver automated, AI-powered code reviews on Pull Requests. The bot supports **multiple AI providers** — Anthropic Claude, OpenAI, Ollama (local LLMs), and llama.cpp — and **multiple Git providers** — Gitea, GitHub, and GitHub Enterprise. It can review new PRs, respond to questions in comments, and answer inline review comments while maintaining conversation context across interactions.
+A Spring Boot application that connects your Git hosting platform with AI providers to deliver automated, AI-powered code reviews on Pull Requests. The bot supports **multiple AI providers** — Anthropic Claude, OpenAI, Ollama (local LLMs), and llama.cpp — and **multiple Git providers** — Gitea, GitHub, GitHub Enterprise, GitLab, and Bitbucket Cloud. It can review new PRs, respond to questions in comments, and answer inline review comments while maintaining conversation context across interactions.
 
 ## Features
 
@@ -29,7 +29,7 @@ Mention the bot in an inline review comment on a specific code line. The bot inc
 All configuration is managed through a **web-based UI** — no environment variables needed for AI providers, Git connections, or bot settings:
 
 - Create multiple **AI Integrations** (Anthropic, OpenAI, Ollama, llama.cpp)
-- Create multiple **Git Integrations** (Gitea, GitHub, GitHub Enterprise)
+- Create multiple **Git Integrations** (Gitea, GitHub, GitHub Enterprise, GitLab, Bitbucket Cloud)
 - Create multiple **Bots**, each with its own webhook URL, AI provider, and system prompt
 - Dashboard with statistics and monitoring
 
@@ -53,6 +53,8 @@ Connect to your preferred Git hosting platform:
 | **Gitea** | Self-hosted Gitea instances |
 | **GitHub** | github.com |
 | **GitHub Enterprise** | Self-hosted GitHub Enterprise Server |
+| **GitLab** | gitlab.com and self-managed GitLab CE/EE |
+| **Bitbucket Cloud** | bitbucket.org |
 
 ### More Features
 
@@ -137,9 +139,9 @@ This starts:
 
 2. **Create a Git Integration:**
    - Go to **Git Integrations → New Integration**
-   - Select your provider (Gitea or GitHub)
+   - Select your provider (Gitea, GitHub, GitLab, or Bitbucket)
    - Enter your Git server URL and API token
-   - See [Gitea Setup](doc/GITEA_SETUP.md) or [GitHub Setup](doc/GITHUB_SETUP.md) for detailed token creation
+   - See [Gitea Setup](doc/GITEA_SETUP.md), [GitHub Setup](doc/GITHUB_SETUP.md), [GitLab Setup](doc/GITLAB_SETUP.md), or [Bitbucket Setup](doc/BITBUCKET_SETUP.md) for detailed token creation
 
 3. **Create a Bot:**
    - Go to **Bots → New Bot**
@@ -161,13 +163,23 @@ Configure webhooks in your Git provider to notify the bot about PR events.
 
 See [GitHub Setup](doc/GITHUB_SETUP.md#4-configure-webhooks) for detailed instructions.
 
+**For GitLab:**
+
+1. Go to **Settings → Webhooks → Add new webhook**
+2. Paste the bot's webhook URL
+3. Enable triggers: Merge request events, Comments
+
+See [GitLab Setup](doc/GITLAB_SETUP.md#4-configure-webhooks) for detailed instructions.
+
+**For Bitbucket Cloud:** See [Bitbucket Setup](doc/BITBUCKET_SETUP.md#step-4-configure-the-webhook-in-bitbucket)
+
 See [User Guide](doc/USER_GUIDE.md) for detailed instructions.
 
 ## Architecture Overview
 
 ```mermaid
 graph LR
-    Git["Git Provider<br/>(Gitea / GitHub)"]
+    Git["Git Provider<br/>(Gitea / GitHub / GitLab / Bitbucket)"]
     Bot["AI Code Review Bot<br/>(Spring Boot)"]
     AI["AI Provider<br/>(Anthropic / OpenAI / Ollama / llama.cpp)"]
     DB["PostgreSQL"]
@@ -192,6 +204,8 @@ The bot receives webhooks from your Git provider, fetches PR diffs, sends them t
 | **Git Provider Setup** | |
 | [Gitea Setup](doc/GITEA_SETUP.md) | Bot user creation, permissions, API tokens for Gitea |
 | [GitHub Setup](doc/GITHUB_SETUP.md) | Bot user creation, permissions, PAT tokens for GitHub |
+| [GitLab Setup](doc/GITLAB_SETUP.md) | Bot user creation, permissions, PAT tokens for GitLab |
+| [Bitbucket Setup](doc/BITBUCKET_SETUP.md) | API tokens and webhook configuration for Bitbucket Cloud |
 | **AI Provider Setup** | |
 | [Using Ollama](doc/OLLAMA.md) | Running with local LLMs via Ollama |
 | [Using llama.cpp](doc/LLAMACPP.md) | Running with llama.cpp and GBNF grammar support |

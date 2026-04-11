@@ -6,6 +6,7 @@ import org.remus.giteabot.admin.BotService;
 import org.remus.giteabot.bitbucket.BitbucketWebhookHandler;
 import org.remus.giteabot.gitea.GiteaWebhookHandler;
 import org.remus.giteabot.github.GitHubWebhookHandler;
+import org.remus.giteabot.gitlab.GitLabWebhookHandler;
 import org.remus.giteabot.repository.RepositoryType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -23,6 +24,7 @@ import java.util.Map;
  *   <li>{@link RepositoryType#GITEA} → {@link GiteaWebhookHandler}</li>
  *   <li>{@link RepositoryType#GITHUB} → {@link GitHubWebhookHandler}</li>
  *   <li>{@link RepositoryType#BITBUCKET} → {@link BitbucketWebhookHandler}</li>
+ *   <li>{@link RepositoryType#GITLAB} → {@link GitLabWebhookHandler}</li>
  * </ul>
  */
 @Slf4j
@@ -34,15 +36,18 @@ public class UnifiedWebhookController {
     private final GiteaWebhookHandler giteaHandler;
     private final GitHubWebhookHandler gitHubHandler;
     private final BitbucketWebhookHandler bitbucketHandler;
+    private final GitLabWebhookHandler gitLabHandler;
 
     public UnifiedWebhookController(BotService botService,
                                     GiteaWebhookHandler giteaHandler,
                                     GitHubWebhookHandler gitHubHandler,
-                                    BitbucketWebhookHandler bitbucketHandler) {
+                                    BitbucketWebhookHandler bitbucketHandler,
+                                    GitLabWebhookHandler gitLabHandler) {
         this.botService = botService;
         this.giteaHandler = giteaHandler;
         this.gitHubHandler = gitHubHandler;
         this.bitbucketHandler = bitbucketHandler;
+        this.gitLabHandler = gitLabHandler;
     }
 
     /**
@@ -51,6 +56,7 @@ public class UnifiedWebhookController {
      *
      * @param webhookSecret the bot's unique webhook secret (URL path)
      * @param xGitHubEvent  GitHub event type header (optional)
+     * @param xGitLabEvent  GitLab event type header (optional)
      * @param xEventKey     Bitbucket event key header (optional)
      * @param payload       the raw webhook payload
      * @return response indicating the result of webhook processing
@@ -59,6 +65,7 @@ public class UnifiedWebhookController {
     public ResponseEntity<String> handleWebhook(
             @PathVariable String webhookSecret,
             @RequestHeader(value = "X-GitHub-Event", required = false) String xGitHubEvent,
+            @RequestHeader(value = "X-Gitlab-Event", required = false) String xGitLabEvent,
             @RequestHeader(value = "X-Event-Key", required = false) String xEventKey,
             @RequestBody Map<String, Object> payload) {
 
@@ -69,7 +76,7 @@ public class UnifiedWebhookController {
                         return ResponseEntity.ok("bot disabled");
                     }
                     botService.incrementWebhookCallCount(bot);
-                    return routeToHandler(bot, xGitHubEvent, xEventKey, payload);
+                    return routeToHandler(bot, xGitHubEvent, xGitLabEvent, xEventKey, payload);
                 })
                 .orElseGet(() -> {
                     log.warn("No bot found for webhook secret: {}...",
@@ -83,6 +90,7 @@ public class UnifiedWebhookController {
      */
     private ResponseEntity<String> routeToHandler(Bot bot,
                                                    String xGitHubEvent,
+                                                   String xGitLabEvent,
                                                    String xEventKey,
                                                    Map<String, Object> payload) {
         RepositoryType providerType = bot.getGitIntegration().getProviderType();
@@ -95,10 +103,7 @@ public class UnifiedWebhookController {
             case GITEA -> giteaHandler.handleWebhook(bot, payload);
             case GITHUB -> gitHubHandler.handleWebhook(bot, xGitHubEvent, payload);
             case BITBUCKET -> bitbucketHandler.handleWebhook(bot, xEventKey, payload);
-            case GITLAB -> {
-                log.warn("GitLab webhooks are not yet supported");
-                yield ResponseEntity.ok("gitlab not supported");
-            }
+            case GITLAB -> gitLabHandler.handleWebhook(bot, xGitLabEvent, payload);
         };
     }
 }

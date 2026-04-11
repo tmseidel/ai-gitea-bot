@@ -1,12 +1,12 @@
 # AI Code Review Bot
 
-AI-powered code review bot for **Gitea and GitHub** with a **web-based management UI**. Supports multiple AI providers — Anthropic Claude, OpenAI, Ollama (local LLMs), and llama.cpp.
+AI-powered code review bot for **Gitea, GitHub, GitLab, and Bitbucket** with a **web-based management UI**. Supports multiple AI providers — Anthropic Claude, OpenAI, Ollama (local LLMs), and llama.cpp.
 
 ## Features
 
 - **Web-Based Management** — Configure bots, AI providers, and Git connections through a browser UI
 - **Multi-Bot Support** — Create multiple bots with different AI providers and prompts
-- **Multiple Git Providers** — Gitea, GitHub, and GitHub Enterprise support
+- **Multiple Git Providers** — Gitea, GitHub, GitHub Enterprise, GitLab, and Bitbucket Cloud support
 - **Automatic PR Reviews** — Reviews diffs when Pull Requests are opened or updated
 - **Multiple AI Providers** — Anthropic, OpenAI, Ollama, and llama.cpp support
 - **Interactive Bot Commands** — Mention the bot in PR comments to ask questions

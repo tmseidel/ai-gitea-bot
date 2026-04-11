@@ -11,9 +11,9 @@ import java.util.Map;
  * Provider-agnostic interface for repository operations (pull requests, reviews,
  * comments, branches, files).  Implementations exist for Gitea
  * ({@link org.remus.giteabot.gitea.GiteaApiClient}), GitHub
- * ({@link org.remus.giteabot.github.GitHubApiClient}), and Bitbucket Cloud
- * ({@link org.remus.giteabot.bitbucket.BitbucketApiClient}), with future support for
- * GitLab, etc.
+ * ({@link org.remus.giteabot.github.GitHubApiClient}), GitLab
+ * ({@link org.remus.giteabot.gitlab.GitLabApiClient}), and Bitbucket Cloud
+ * ({@link org.remus.giteabot.bitbucket.BitbucketApiClient}).
  * <p>
  * Each bot receives its own {@code RepositoryApiClient} instance, pre-configured
  * with the bot's credentials from the {@link org.remus.giteabot.admin.GitIntegration}
@@ -37,6 +37,15 @@ public interface RepositoryApiClient {
     /** Returns the authentication token used by this client. */
     default String getToken() {
         return getCredentials().token();
+    }
+
+    /**
+     * Formats a pull/merge request reference for use in comments.
+     * GitLab uses {@code !N} for merge requests, while Gitea, GitHub, and Bitbucket use {@code #N}.
+     * Override in provider-specific clients as needed.
+     */
+    default String formatPullRequestReference(Long prNumber) {
+        return "#" + prNumber;
     }
 
     // ---- Pull request operations ----

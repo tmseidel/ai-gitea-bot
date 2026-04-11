@@ -1,3 +1,8 @@
+# Docker Desktop for Windows (WSL2) note:
+#   If you also have Docker Desktop installed, disable its WSL integration
+#   (Settings → Resources → WSL Integration) to avoid conflicts with the
+#   native Docker Engine in WSL2. Docker Desktop routes host.docker.internal
+#   through a separate VM, breaking container-to-host connectivity.
 
 services:
   server:

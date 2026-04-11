@@ -138,9 +138,11 @@ public class IssueImplementationService {
             if (plan == null || plan.getFileChanges() == null || plan.getFileChanges().isEmpty()) {
                 sessionService.setStatus(session, AgentSession.AgentSessionStatus.FAILED);
                 repositoryClient.postComment(owner, repo, issueNumber,
-                        "🤖 **AI Agent**: I was unable to generate a valid implementation plan for this issue. " +
-                        "The issue may be too complex or ambiguous for automated implementation.\n\n" +
-                        "You can mention me in a comment to provide more details or clarification.");
+                        """
+                                🤖 **AI Agent**: I was unable to generate a valid implementation plan for this issue. \
+                                The issue may be too complex or ambiguous for automated implementation.
+                                
+                                You can mention me in a comment to provide more details or clarification.""");
                 return;
             }
 
@@ -183,13 +185,19 @@ public class IssueImplementationService {
             sessionService.setPrNumber(session, prNumber);
 
             // Comment on issue with link to PR
+            String prRef = repositoryClient.formatPullRequestReference(prNumber);
             String successComment = String.format(
-                    "🤖 **AI Agent**: Implementation complete! I've created PR #%d with the following changes:\n\n" +
-                    "**Summary**: %s\n\n" +
-                    "**Files changed** (%d):\n%s\n\n" +
-                    "Please review the changes carefully. If you need modifications, mention me in a comment " +
-                    "on this issue and I'll continue working on it.",
-                    prNumber, plan.getSummary(), plan.getFileChanges().size(),
+                    """
+                            🤖 **AI Agent**: Implementation complete! I've created %s with the following changes:
+                            
+                            **Summary**: %s
+                            
+                            **Files changed** (%d):
+                            %s
+                            
+                            Please review the changes carefully. If you need modifications, mention me in a comment \
+                            on this issue and I'll continue working on it.""",
+                    prRef, plan.getSummary(), plan.getFileChanges().size(),
                     plan.getFileChanges().stream()
                             .map(fc -> String.format("- `%s` (%s)", fc.getPath(), fc.getOperation()))
                             .collect(Collectors.joining("\n")));
@@ -214,9 +222,11 @@ public class IssueImplementationService {
             // Post failure comment
             try {
                 repositoryClient.postComment(owner, repo, issueNumber,
-                        String.format("🤖 **AI Agent**: Implementation failed with error: `%s`\n\n" +
-                                "The created branch has been cleaned up. You can mention me in a comment " +
-                                "to try again with more details.",
+                        String.format("""
+                                        🤖 **AI Agent**: Implementation failed with error: `%s`
+                                        
+                                        The created branch has been cleaned up. You can mention me in a comment \
+                                        to try again with more details.""",
                                 e.getMessage()));
             } catch (Exception commentError) {
                 log.error("Failed to post failure comment on issue #{}: {}", issueNumber, commentError.getMessage());
@@ -408,7 +418,6 @@ public class IssueImplementationService {
 
                     currentMessage = toolRequestMessage;
                     sessionService.addMessage(session, "user", toolRequestMessage);
-                    continue;
                 }
             }
 
@@ -478,18 +487,17 @@ public class IssueImplementationService {
     }
 
     private String buildMissingToolFeedback() {
-        StringBuilder sb = new StringBuilder();
-        sb.append("## Missing Validation Tool\n\n");
-        sb.append("Your response included `fileChanges` but no `runTool` for validation.\n\n");
-        sb.append("**Validation is mandatory.** Please provide the same file changes again, ");
-        sb.append("but this time include a `runTool` to validate the code.\n\n");
-        sb.append("Detect the build system from the file tree and request the appropriate tool:\n");
-        sb.append("- Maven: `{\"tool\": \"mvn\", \"args\": [\"compile\", \"-q\", \"-B\"]}`\n");
-        sb.append("- Gradle: `{\"tool\": \"gradle\", \"args\": [\"compileJava\", \"-q\"]}`\n");
-        sb.append("- npm: `{\"tool\": \"npm\", \"args\": [\"run\", \"build\"]}`\n");
-        sb.append("- etc.\n\n");
-        sb.append("Output JSON with both `fileChanges` and `runTool`.");
-        return sb.toString();
+        String sb = "## Missing Validation Tool\n\n" +
+                "Your response included `fileChanges` but no `runTool` for validation.\n\n" +
+                "**Validation is mandatory.** Please provide the same file changes again, " +
+                "but this time include a `runTool` to validate the code.\n\n" +
+                "Detect the build system from the file tree and request the appropriate tool:\n" +
+                "- Maven: `{\"tool\": \"mvn\", \"args\": [\"compile\", \"-q\", \"-B\"]}`\n" +
+                "- Gradle: `{\"tool\": \"gradle\", \"args\": [\"compileJava\", \"-q\"]}`\n" +
+                "- npm: `{\"tool\": \"npm\", \"args\": [\"run\", \"build\"]}`\n" +
+                "- etc.\n\n" +
+                "Output JSON with both `fileChanges` and `runTool`.";
+        return sb;
     }
 
     /**
@@ -805,16 +813,22 @@ public class IssueImplementationService {
             sessionService.setStatus(session, AgentSession.AgentSessionStatus.PR_CREATED);
 
             // Post success comment
+            String prRef = repositoryClient.formatPullRequestReference(session.getPrNumber());
             String updateComment = String.format(
-                    "🤖 **AI Agent**: I've made the following additional changes:\n\n" +
-                    "**Summary**: %s\n\n" +
-                    "**Files changed** (%d):\n%s\n\n" +
-                    "The changes have been pushed to PR #%d.",
+                    """
+                            🤖 **AI Agent**: I've made the following additional changes:
+                            
+                            **Summary**: %s
+                            
+                            **Files changed** (%d):
+                            %s
+                            
+                            The changes have been pushed to %s.""",
                     plan.getSummary(), plan.getFileChanges().size(),
                     plan.getFileChanges().stream()
                             .map(fc -> String.format("- `%s` (%s)", fc.getPath(), fc.getOperation()))
                             .collect(Collectors.joining("\n")),
-                    session.getPrNumber());
+                    prRef);
 
             repositoryClient.postComment(owner, repo, issueNumber, updateComment);
             log.info("Successfully applied follow-up changes for issue #{}", issueNumber);
@@ -824,8 +838,10 @@ public class IssueImplementationService {
 
             try {
                 repositoryClient.postComment(owner, repo, issueNumber,
-                        String.format("🤖 **AI Agent**: Failed to process your request: `%s`\n\n" +
-                                "Please try again or provide more details.",
+                        String.format("""
+                                        🤖 **AI Agent**: Failed to process your request: `%s`
+                                        
+                                        Please try again or provide more details.""",
                                 e.getMessage()));
             } catch (Exception commentError) {
                 log.error("Failed to post error comment on issue #{}: {}", issueNumber, commentError.getMessage());
@@ -1111,11 +1127,25 @@ public class IssueImplementationService {
         return userComment;
     }
 
-    private String extractNonJsonResponse(String aiResponse) {
+    String extractNonJsonResponse(String aiResponse) {
         // Try to extract the text before any JSON block
         int jsonStart = aiResponse.indexOf("```json");
-        if (jsonStart > 0) {
-            return aiResponse.substring(0, jsonStart).strip();
+        if (jsonStart >= 0) {
+            if (jsonStart == 0) {
+                return null; // Response starts with JSON block, no thinking text
+            }
+            String thinking = aiResponse.substring(0, jsonStart).strip();
+            return thinking.isEmpty() ? null : thinking;
+        }
+
+        // Also check for ``` without language hint (some models do this)
+        int codeBlockStart = aiResponse.indexOf("```\n{");
+        if (codeBlockStart >= 0) {
+            if (codeBlockStart == 0) {
+                return null;
+            }
+            String thinking = aiResponse.substring(0, codeBlockStart).strip();
+            return thinking.isEmpty() ? null : thinking;
         }
 
         // If no JSON block, check if it looks like JSON

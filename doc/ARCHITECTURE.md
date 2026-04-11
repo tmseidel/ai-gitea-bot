@@ -6,7 +6,7 @@ This document describes the high-level architecture of the AI Code Review Bot, i
 
 ```mermaid
 graph LR
-    Git["Git Provider<br/>(Gitea / GitHub)"]
+    Git["Git Provider<br/>(Gitea / GitHub / GitLab / Bitbucket)"]
     Bot["AI Code Review Bot"]
     AI["AI Provider<br/>(Anthropic / OpenAI / Ollama / llama.cpp)"]
     DB["PostgreSQL Database"]
@@ -21,7 +21,7 @@ graph LR
     Bot -- "Config & Sessions" --> DB
 ```
 
-The bot sits between a Git hosting platform (Gitea or GitHub) and a configurable AI provider. When a pull request is opened or updated, the Git provider sends a webhook to the bot. The bot fetches the diff, sends it to the configured AI provider for review, and posts the review back as a PR comment. All configuration (AI integrations, Git integrations, bots) and conversation sessions are persisted in a database.
+The bot sits between a Git hosting platform (Gitea, GitHub, GitLab, or Bitbucket) and a configurable AI provider. When a pull request is opened or updated, the Git provider sends a webhook to the bot. The bot fetches the diff, sends it to the configured AI provider for review, and posts the review back as a PR comment. All configuration (AI integrations, Git integrations, bots) and conversation sessions are persisted in a database.
 
 The bot also responds to inline review comments and submitted reviews containing bot mentions by fetching the relevant review data from the Git API and posting context-aware replies.
 
@@ -71,11 +71,15 @@ graph TD
             subgraph "Repository Provider Metadata"
                 GiteaMeta["GiteaProviderMetadata"]
                 GitHubMeta["GitHubProviderMetadata"]
+                GitLabMeta["GitLabProviderMetadata"]
+                BitbucketMeta["BitbucketProviderMetadata"]
             end
             subgraph "Repository Clients"
                 RepoInterface["RepositoryApiClient<br/><i>Interface</i>"]
                 GiteaClient["GiteaApiClient"]
                 GitHubClient["GitHubApiClient"]
+                GitLabClient["GitLabApiClient"]
+                BitbucketClient["BitbucketApiClient"]
             end
         end
 
@@ -91,6 +95,8 @@ graph TD
     subgraph "External"
         Gitea["Gitea"]
         GitHub["GitHub / GitHub Enterprise"]
+        GitLab["GitLab / GitLab CE/EE"]
+        Bitbucket["Bitbucket Cloud"]
         Anthropic["Anthropic API"]
         OpenAI["OpenAI API"]
         Ollama["Ollama (local)"]
@@ -116,12 +122,16 @@ graph TD
     AiProviderRegistry --> LlamaCppMeta
     RepoProviderRegistry --> GiteaMeta
     RepoProviderRegistry --> GitHubMeta
+    RepoProviderRegistry --> GitLabMeta
+    RepoProviderRegistry --> BitbucketMeta
     AnthropicMeta --> AnthropicImpl
     OpenAiMeta --> OpenAiImpl
     OllamaMeta --> OllamaImpl
     LlamaCppMeta --> LlamaCppImpl
     GiteaMeta --> GiteaClient
     GitHubMeta --> GitHubClient
+    GitLabMeta --> GitLabClient
+    BitbucketMeta --> BitbucketClient
     AiInterface -.-> AbstractClient
     AbstractClient -.-> AnthropicImpl
     AbstractClient -.-> OpenAiImpl
@@ -129,12 +139,16 @@ graph TD
     AbstractClient -.-> LlamaCppImpl
     RepoInterface -.-> GiteaClient
     RepoInterface -.-> GitHubClient
+    RepoInterface -.-> GitLabClient
+    RepoInterface -.-> BitbucketClient
     AnthropicImpl --> Anthropic
     OpenAiImpl --> OpenAI
     OllamaImpl --> Ollama
     LlamaCppImpl --> LlamaCpp
     GiteaClient --> Gitea
     GitHubClient --> GitHub
+    GitLabClient --> GitLab
+    BitbucketClient --> Bitbucket
     BotRepo --> DB
     SessionRepo --> DB
 ```
@@ -226,10 +240,18 @@ RepositoryProviderMetadata (interface)
  │    └── Default URL: https://gitea.example.com
  │    └── Auth: token <token>
  │    └── API: Same base URL with /api/v1 paths
- └── GitHubProviderMetadata
-      └── Default URL: https://github.com
-      └── Auth: Bearer <token>
-      └── API: api.github.com (public) or <host>/api/v3 (Enterprise)
+ ├── GitHubProviderMetadata
+ │    └── Default URL: https://github.com
+ │    └── Auth: Bearer <token>
+ │    └── API: api.github.com (public) or <host>/api/v3 (Enterprise)
+ ├── GitLabProviderMetadata
+ │    └── Default URL: https://gitlab.com
+ │    └── Auth: PRIVATE-TOKEN <token>
+ │    └── API: Same base URL with /api/v4 paths
+ └── BitbucketProviderMetadata
+      └── Default URL: https://bitbucket.org
+      └── Auth: Basic <username:token> or Bearer <token>
+      └── API: api.bitbucket.org/2.0
 ```
 
 ### RepositoryProviderRegistry
@@ -246,7 +268,9 @@ All Git provider clients implement this interface:
 ```
 RepositoryApiClient (interface)
  ├── GiteaApiClient
- └── GitHubApiClient
+ ├── GitHubApiClient
+ ├── GitLabApiClient
+ └── BitbucketApiClient
 ```
 
 Methods include:
@@ -259,12 +283,13 @@ Methods include:
 
 ### Provider Differences
 
-| Feature | Gitea | GitHub |
-|---------|-------|--------|
-| Auth Header | `token <token>` | `Bearer <token>` |
-| API Base | `<url>/api/v1` | `api.github.com` or `<host>/api/v3` |
-| PR Diff | `/repos/{owner}/{repo}/pulls/{pr}/diff` | `/repos/{owner}/{repo}/pulls/{pr}` with `Accept: diff` |
-| Reactions | Text-based (`:eyes:`) | Text-based (`eyes`) |
+| Feature | Gitea | GitHub | GitLab | Bitbucket Cloud |
+|---------|-------|--------|--------|-----------------|
+| Auth Header | `token <token>` | `Bearer <token>` | `PRIVATE-TOKEN: <token>` | `Basic` or `Bearer` |
+| API Base | `<url>/api/v1` | `api.github.com` or `<host>/api/v3` | `<url>/api/v4` | `api.bitbucket.org/2.0` |
+| PR Diff | `/repos/{owner}/{repo}/pulls/{pr}/diff` | `/repos/{owner}/{repo}/pulls/{pr}` with `Accept: diff` | `/projects/{id}/repository/compare` | `/repositories/{workspace}/{repo}/pullrequests/{pr}/diff` |
+| Reactions | Text-based (`:eyes:`) | Text-based (`eyes`) | Not supported (no-op) | Not supported |
+| Project ID | `{owner}/{repo}` | `{owner}/{repo}` | URL-encoded `{owner}%2F{repo}` | `{workspace}/{repo}` |
 
 ## Entity Model
 
@@ -398,6 +423,8 @@ erDiagram
 - **Package:** `org.remus.giteabot.repository`
 - `GiteaProviderMetadata` — Gitea API client factory
 - `GitHubProviderMetadata` — GitHub API client factory
+- `GitLabProviderMetadata` — GitLab API client factory (uses `PRIVATE-TOKEN` header, URL-encoded project paths)
+- `BitbucketProviderMetadata` — Bitbucket Cloud API client factory
 - Define provider-specific URL resolution and client creation
 - Registered as `@Component` beans
 

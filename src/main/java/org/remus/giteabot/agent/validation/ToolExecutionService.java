@@ -201,7 +201,9 @@ public class ToolExecutionService {
             baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
         }
 
-        return String.format("%s://%s@%s/%s/%s.git", protocol, token, baseUrl, owner, repo);
+        // Use oauth2:TOKEN format — this works for GitLab, GitHub, Gitea, and Bitbucket.
+        // Using just TOKEN@host makes Git treat it as a username and prompt for a password.
+        return String.format("%s://oauth2:%s@%s/%s/%s.git", protocol, token, baseUrl, owner, repo);
     }
 
     private CommandResult runCommand(File workDir, String[] command, int timeoutSeconds) {

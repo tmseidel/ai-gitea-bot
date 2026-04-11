@@ -116,6 +116,16 @@
                     usernameInput.required = false;
                     tokenLabel.textContent = 'Personal Access Token';
                     tokenDescription.textContent = 'A GitHub Personal Access Token (classic) or Fine-grained token with repository permissions.';
+                } else if (providerType === 'GITLAB') {
+                    // GitLab: URL + Token
+                    urlField.style.display = 'block';
+                    urlInput.required = true;
+                    urlInput.placeholder = 'e.g. https://gitlab.com or https://gitlab.yourdomain.com';
+                    urlDescription.textContent = 'The base URL of your GitLab instance (e.g. https://gitlab.com for gitlab.com, or https://gitlab.yourdomain.com for self-managed).';
+                    usernameField.style.display = 'none';
+                    usernameInput.required = false;
+                    tokenLabel.textContent = 'Personal Access Token';
+                    tokenDescription.textContent = 'A GitLab Personal Access Token with api and read_repository scopes. See GitLab Settings → Access Tokens.';
                 } else if (providerType === 'BITBUCKET') {
                     // Bitbucket: Username + Token (App Password)
                     urlField.style.display = 'none';

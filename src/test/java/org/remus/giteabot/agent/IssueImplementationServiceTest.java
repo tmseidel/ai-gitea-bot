@@ -229,8 +229,8 @@ class IssueImplementationServiceTest {
 
         assertThat(plan).isNotNull();
         assertThat(plan.getFileChanges()).hasSize(1);
-        assertThat(plan.getFileChanges().get(0).isDiffBased()).isTrue();
-        assertThat(plan.getFileChanges().get(0).getDiff()).contains("SEARCH");
+        assertThat(plan.getFileChanges().getFirst().isDiffBased()).isTrue();
+        assertThat(plan.getFileChanges().getFirst().getDiff()).contains("SEARCH");
     }
 
     @Test
@@ -285,7 +285,7 @@ class IssueImplementationServiceTest {
     }
 
     @Test
-    void parseAiResponse_rawJson_withRunTool_directObjectMapper() throws Exception {
+    void parseAiResponse_rawJson_withRunTool_directObjectMapper() {
         // Test Jackson parsing directly to isolate the issue
         String jsonStr = """
                 {
@@ -310,7 +310,7 @@ class IssueImplementationServiceTest {
         tools.jackson.databind.JsonNode root = mapper.readTree(jsonStr);
         assertThat(root.has("runTool")).isTrue();
         assertThat(root.get("runTool").has("tool")).isTrue();
-        assertThat(root.get("runTool").get("tool").asText()).isEqualTo("mvn");
+        assertThat(root.get("runTool").get("tool").asString()).isEqualTo("mvn");
     }
 
     @Test
@@ -508,5 +508,58 @@ class IssueImplementationServiceTest {
 
 
         return payload;
+    }
+
+    // ---- extractNonJsonResponse tests ----
+
+    @Test
+    void extractNonJsonResponse_pureJsonBlock_returnsNull() {
+        String response = """
+                ```json
+                {
+                  "summary": "test",
+                  "fileChanges": []
+                }
+                ```
+                """;
+        assertThat(service.extractNonJsonResponse(response)).isNull();
+    }
+
+    @Test
+    void extractNonJsonResponse_pureRawJson_returnsNull() {
+        String response = """
+                {
+                  "summary": "test",
+                  "fileChanges": []
+                }
+                """;
+        assertThat(service.extractNonJsonResponse(response)).isNull();
+    }
+
+    @Test
+    void extractNonJsonResponse_thinkingBeforeJson_returnsThinking() {
+        String response = """
+                I'll create the following files for you.
+                ```json
+                {
+                  "summary": "test",
+                  "fileChanges": []
+                }
+                ```
+                """;
+        String result = service.extractNonJsonResponse(response);
+        assertThat(result).isEqualTo("I'll create the following files for you.");
+    }
+
+    @Test
+    void extractNonJsonResponse_onlyWhitespaceBeforeJson_returnsNull() {
+        String response = "\n  \n```json\n{}\n```";
+        assertThat(service.extractNonJsonResponse(response)).isNull();
+    }
+
+    @Test
+    void extractNonJsonResponse_plainText_returnsText() {
+        String response = "I can't implement this because the issue is too vague.";
+        assertThat(service.extractNonJsonResponse(response)).isEqualTo(response);
     }
 }

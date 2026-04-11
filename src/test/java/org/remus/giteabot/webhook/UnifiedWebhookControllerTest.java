@@ -5,6 +5,7 @@ import org.remus.giteabot.admin.*;
 import org.remus.giteabot.bitbucket.BitbucketWebhookHandler;
 import org.remus.giteabot.gitea.GiteaWebhookHandler;
 import org.remus.giteabot.github.GitHubWebhookHandler;
+import org.remus.giteabot.gitlab.GitLabWebhookHandler;
 import org.remus.giteabot.repository.RepositoryType;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -42,6 +43,9 @@ class UnifiedWebhookControllerTest {
 
     @MockitoBean
     private BitbucketWebhookHandler bitbucketHandler;
+
+    @MockitoBean
+    private GitLabWebhookHandler gitLabHandler;
 
     @Test
     void handleWebhook_giteaBot_delegatesToGiteaHandler() throws Exception {
@@ -122,15 +126,41 @@ class UnifiedWebhookControllerTest {
     }
 
     @Test
-    void handleWebhook_gitlabBot_returnsNotSupported() throws Exception {
+    void handleWebhook_gitlabBot_delegatesToGitLabHandler() throws Exception {
         Bot bot = createTestBot(RepositoryType.GITLAB);
         when(botService.findByWebhookSecret("test-secret")).thenReturn(Optional.of(bot));
+        when(gitLabHandler.handleWebhook(eq(bot), eq("Merge Request Hook"), any())).thenReturn(ResponseEntity.ok("review triggered"));
 
         mockMvc.perform(post("/api/webhook/test-secret")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{}"))
+                        .header("X-Gitlab-Event", "Merge Request Hook")
+                        .content("{\"object_kind\":\"merge_request\",\"object_attributes\":{\"iid\":1,\"action\":\"open\"}}"))
                 .andExpect(status().isOk())
-                .andExpect(content().string("gitlab not supported"));
+                .andExpect(content().string("review triggered"));
+
+        verify(gitLabHandler).handleWebhook(eq(bot), eq("Merge Request Hook"), any(Map.class));
+        verify(giteaHandler, never()).handleWebhook(any(), any());
+        verify(gitHubHandler, never()).handleWebhook(any(), any(), any());
+        verify(bitbucketHandler, never()).handleWebhook(any(), any(), any());
+    }
+
+    @Test
+    void handleWebhook_gitlabBot_issueHook_delegatesToGitLabHandler() throws Exception {
+        Bot bot = createTestBot(RepositoryType.GITLAB);
+        when(botService.findByWebhookSecret("test-secret")).thenReturn(Optional.of(bot));
+        when(gitLabHandler.handleWebhook(eq(bot), eq("Issue Hook"), any())).thenReturn(ResponseEntity.ok("agent triggered"));
+
+        mockMvc.perform(post("/api/webhook/test-secret")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Gitlab-Event", "Issue Hook")
+                        .content("{\"object_kind\":\"issue\",\"object_attributes\":{\"iid\":1,\"action\":\"update\"}}"))
+                .andExpect(status().isOk())
+                .andExpect(content().string("agent triggered"));
+
+        verify(gitLabHandler).handleWebhook(eq(bot), eq("Issue Hook"), any(Map.class));
+        verify(giteaHandler, never()).handleWebhook(any(), any());
+        verify(gitHubHandler, never()).handleWebhook(any(), any(), any());
+        verify(bitbucketHandler, never()).handleWebhook(any(), any(), any());
     }
 
     private Bot createTestBot(RepositoryType type) {

@@ -2,7 +2,7 @@
 
 ## Overview
 
-AI Code Review Bot provides a web-based management interface for creating and managing AI-powered code review bots. Each bot connects an AI provider (Anthropic, OpenAI, Ollama, or llama.cpp) with a Git provider (Gitea, GitHub, or GitHub Enterprise) and has its own unique webhook URL.
+AI Code Review Bot provides a web-based management interface for creating and managing AI-powered code review bots. Each bot connects an AI provider (Anthropic, OpenAI, Ollama, or llama.cpp) with a Git provider (Gitea, GitHub, GitHub Enterprise, GitLab, or Bitbucket Cloud) and has its own unique webhook URL.
 
 All AI and Git configuration is managed exclusively through the web UI and stored in the database. There are no environment variables for AI providers, Git connections, or bot usernames.
 
@@ -98,22 +98,28 @@ Git Integrations define connections to Git providers. Navigate to **Git Integrat
 |----------|-------------|---------------|
 | **Gitea** | Self-hosted Gitea instances | [Gitea Setup](GITEA_SETUP.md) |
 | **GitHub** | github.com or GitHub Enterprise Server | [GitHub Setup](GITHUB_SETUP.md) |
+| **GitLab** | gitlab.com or self-managed GitLab CE/EE | [GitLab Setup](GITLAB_SETUP.md) |
+| **Bitbucket Cloud** | bitbucket.org | [Bitbucket Setup](BITBUCKET_SETUP.md) |
 
 ### Creating a Git Integration
 
 1. Click **New Integration**
 2. Fill in the form:
-   - **Name**: A descriptive name (e.g., "GitHub Production", "Gitea Internal")
+   - **Name**: A descriptive name (e.g., "GitHub Production", "GitLab Internal")
    - **Provider Type**: Select the Git provider:
      
      | Provider | Default URL | Token Format |
      |----------|-------------|--------------|
      | `gitea` | `https://gitea.example.com` | API Token |
      | `github` | `https://github.com` | Personal Access Token (PAT) |
+     | `gitlab` | `https://gitlab.com` | Personal Access Token (PAT) |
+     | `bitbucket` | `https://bitbucket.org` | App Password / API Token |
      
    - **URL**: The Git server URL:
      - For Gitea: `https://gitea.example.com`
      - For GitHub: `https://github.com` or `https://github.yourdomain.com` (Enterprise)
+     - For GitLab: `https://gitlab.com` or `https://gitlab.yourdomain.com` (self-managed)
+     - For Bitbucket: `https://bitbucket.org`
    - **Token**: Your Git API token (encrypted at rest)
 3. Click **Save**
 
@@ -131,6 +137,21 @@ Git Integrations define connections to Git providers. Navigate to **Git Integrat
 - For github.com, the API is at `api.github.com`
 - For GitHub Enterprise, the API is at `<your-domain>/api/v3`
 - See [GitHub Setup](GITHUB_SETUP.md) for token creation instructions
+
+#### GitLab / GitLab CE/EE
+
+- Uses `PRIVATE-TOKEN: <token>` authentication header
+- API endpoint is at the same base URL with `/api/v4` paths
+- Uses URL-encoded project paths (`owner%2Frepo`) internally
+- Reactions (👀) are not supported — see [GitLab Setup](GITLAB_SETUP.md) for details
+- See [GitLab Setup](GITLAB_SETUP.md) for token creation instructions
+
+#### Bitbucket Cloud
+
+- Uses Basic authentication (`username:token`)
+- API endpoint is at `api.bitbucket.org/2.0`
+- Agent feature (issue implementation) is not available
+- See [Bitbucket Setup](BITBUCKET_SETUP.md) for token creation instructions
 
 ### Managing Git Integrations
 
@@ -161,29 +182,30 @@ Bots are the core entities that connect an AI provider with a Git provider. Navi
 
 ### Webhook URL
 
-After creating a bot, a unique webhook URL is generated and displayed at the top of the edit form. The URL format depends on the Git provider:
+After creating a bot, a unique webhook URL is generated and displayed at the top of the edit form. The URL format is the same for all providers:
 
 | Provider | Webhook URL Format |
 |----------|-------------------|
-| Gitea | `/api/webhook/{webhook-secret}` |
-| GitHub | `/api/github-webhook/{webhook-secret}` |
+| All providers | `/api/webhook/{webhook-secret}` |
 
 Configure this URL in your Git provider's webhook settings. See the provider-specific setup guides:
 
 - **Gitea**: [Gitea Webhook Setup](GITEA_SETUP.md#4-configure-webhooks)
 - **GitHub**: [GitHub Webhook Setup](GITHUB_SETUP.md#4-configure-webhooks)
+- **GitLab**: [GitLab Webhook Setup](GITLAB_SETUP.md#4-configure-webhooks)
+- **Bitbucket Cloud**: [Bitbucket Webhook Setup](BITBUCKET_SETUP.md#step-4-configure-the-webhook-in-bitbucket)
 
 ### Webhook Events
 
 Select the following events in your Git provider's webhook configuration:
 
-| Event | Gitea | GitHub | Description |
-|-------|-------|--------|-------------|
-| Pull Request | ✅ Pull Request | ✅ Pull requests | Triggers on PR open/update |
-| Issue Comment | ✅ Issue Comment | ✅ Issue comments | Bot mentions in comments |
-| PR Review | ✅ Pull Request Review | ✅ Pull request reviews | Review submissions |
-| PR Comment | ✅ Pull Request Comment | ✅ Pull request review comments | Inline code comments |
-| Issues | ✅ Issues | ✅ Issues | Agent feature (optional) |
+| Event | Gitea | GitHub | GitLab | Bitbucket | Description |
+|-------|-------|--------|--------|-----------|-------------|
+| Pull Request | ✅ Pull Request | ✅ Pull requests | ✅ Merge request events | ✅ PR: Created/Updated | Triggers on PR/MR open/update |
+| Comments | ✅ Issue Comment | ✅ Issue comments | ✅ Comments | ✅ PR: Comment created | Bot mentions in comments |
+| PR Review | ✅ Pull Request Review | ✅ Pull request reviews | — | — | Review submissions |
+| PR Comment | ✅ Pull Request Comment | ✅ Pull request review comments | — | — | Inline code comments |
+| Issues | ✅ Issues | ✅ Issues | ✅ Issues events | — | Agent feature (optional) |
 
 ### Bot Statistics
 
@@ -251,7 +273,7 @@ Sensitive data (API keys, Git tokens) is encrypted at rest using AES-256-GCM enc
 
 ### Authentication
 
-The web UI is protected by Spring Security with form-based authentication. The API webhook endpoints (`/api/webhook/**`) remain unauthenticated to allow Gitea to send webhooks. Each bot has a unique, random webhook secret in its URL path that serves as authentication.
+The web UI is protected by Spring Security with form-based authentication. The API webhook endpoints (`/api/webhook/**`) remain unauthenticated to allow Git providers to send webhooks. Each bot has a unique, random webhook secret in its URL path that serves as authentication.
 
 ## Configuration Reference
 
