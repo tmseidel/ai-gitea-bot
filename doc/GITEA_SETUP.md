@@ -1,8 +1,8 @@
 # Gitea Setup
 
-This guide walks you through preparing your Gitea instance to work with the AI Code Review Bot.
+This guide walks you through preparing your Gitea instance to work with AI-Git-Bot.
 
-> **Note:** For GitHub setup, see [GitHub Setup](GITHUB_SETUP.md).
+> **Note:** For other Git providers, see [GitHub Setup](GITHUB_SETUP.md), [GitLab Setup](GITLAB_SETUP.md), or [Bitbucket Setup](BITBUCKET_SETUP.md).
 
 ## 1. Create the Bot User
 
@@ -120,3 +120,24 @@ After setup, create a test pull request. The bot should:
 4. React with 👀 to acknowledge commands
 
 Check the bot's application logs for troubleshooting if reviews don't appear.
+
+## Screenshots
+
+### Automatic Code Review
+
+When a PR is opened, the bot posts an AI-generated review:
+
+<img src="screenshots/gitea/screenshot_initial_code_review.png" alt="Gitea — Automatic Code Review" width="700"/>
+
+### Interactive Bot Commands
+
+Mention the bot in a PR comment to ask follow-up questions:
+
+<img src="screenshots/gitea/screenshot_code_review_with_comment.png" alt="Gitea — Bot Command Response" width="700"/>
+
+### Inline Review Comments
+
+Mention the bot in an inline code comment for context-aware answers:
+
+<img src="screenshots/gitea/screenshot_code_review_with_inline_comment.png" alt="Gitea — Inline Review Comment" width="700"/>
+

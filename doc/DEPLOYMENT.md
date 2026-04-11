@@ -1,6 +1,6 @@
 # Deployment
 
-This guide covers deploying the AI Code Review Bot using Docker Compose.
+This guide covers deploying the AI-Git-Bot Gateway using Docker Compose.
 
 ## Prerequisites
 
@@ -37,7 +37,7 @@ Save the following as `docker-compose.yml`:
 ```yaml
 services:
   app:
-    image: ghcr.io/your-org/ai-gitea-bot:latest
+    image: tmseidel/ai-git-bot:latest
     # Or build locally:
     # build: .
     ports:
@@ -48,8 +48,6 @@ services:
       DATABASE_USERNAME: giteabot
       DATABASE_PASSWORD: change-me
       APP_ENCRYPTION_KEY: your-secure-encryption-key-here
-    volumes:
-      - ./prompts:/app/prompts:ro
     depends_on:
       db:
         condition: service_healthy

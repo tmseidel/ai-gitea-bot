@@ -1,6 +1,6 @@
 # Bitbucket Cloud Setup Guide
 
-This guide explains how to configure the AI Code Review Bot to work with Bitbucket Cloud.
+This guide explains how to configure AI-Git-Bot to work with Bitbucket Cloud.
 
 ## Limitations
 
@@ -59,6 +59,14 @@ Note the **Webhook Secret** that is generated — you'll need this for the next 
 1. Create a new Pull Request in your repository
 2. The bot should automatically post a code review comment
 3. If it doesn't work, check the bot's logs for error messages
+
+## Screenshots
+
+### Pull Request Code Review
+
+The bot automatically reviews pull requests and posts AI-generated feedback:
+
+<img src="screenshots/bitbucket/bitbucket-code-review.png" alt="Bitbucket — Pull Request Code Review" width="700"/>
 
 ## Troubleshooting
 

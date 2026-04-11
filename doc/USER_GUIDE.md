@@ -2,7 +2,7 @@
 
 ## Overview
 
-AI Code Review Bot provides a web-based management interface for creating and managing AI-powered code review bots. Each bot connects an AI provider (Anthropic, OpenAI, Ollama, or llama.cpp) with a Git provider (Gitea, GitHub, GitHub Enterprise, GitLab, or Bitbucket Cloud) and has its own unique webhook URL.
+AI-Git-Bot is a **Gateway application** that provides a web-based management interface for creating and managing AI-powered code review bots. Each bot connects an AI provider (Anthropic, OpenAI, Ollama, or llama.cpp) with a Git provider (Gitea, GitHub, GitHub Enterprise, GitLab, or Bitbucket Cloud) and has its own unique webhook URL. The Gateway architecture allows you to manage multiple bots with different configurations across different Git platforms — all from a single dashboard.
 
 All AI and Git configuration is managed exclusively through the web UI and stored in the database. There are no environment variables for AI providers, Git connections, or bot usernames.
 

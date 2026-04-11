@@ -1,6 +1,6 @@
 # GitHub Setup
 
-This guide walks you through preparing your GitHub account or GitHub Enterprise instance to work with the AI Code Review Bot.
+This guide walks you through preparing your GitHub account or GitHub Enterprise instance to work with AI-Git-Bot.
 
 ## 1. Create the Bot User (Recommended)
 
@@ -171,6 +171,20 @@ After setup, create a test pull request. The bot should:
 4. React with 👀 to acknowledge commands
 
 Check the bot's application logs for troubleshooting if reviews don't appear.
+
+## Screenshots
+
+### Code Review with Bot Command
+
+The bot responds to mentions in PR comments with context-aware answers:
+
+<img src="screenshots/github/github_code_review_with_comment.png" alt="GitHub — Code Review with Bot Command" width="700"/>
+
+### Autonomous Issue Implementation (Agent)
+
+Assign the bot to an issue and it will autonomously create a PR with the implementation:
+
+<img src="screenshots/github/github_issue_agent_code_implementation.png" alt="GitHub — Agent Issue Implementation" width="700"/>
 
 ## Troubleshooting
 

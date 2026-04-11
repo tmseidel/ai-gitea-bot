@@ -1,6 +1,6 @@
-# Contributing to AI Code Review Bot
+# Contributing to AI-Git-Bot
 
-We welcome contributions to the AI Code Review Bot! This document provides guidelines and instructions for contributing.
+We welcome contributions to AI-Git-Bot! This document provides guidelines and instructions for contributing.
 
 ## Getting Started
 

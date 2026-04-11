@@ -1,6 +1,6 @@
 # GitLab Setup
 
-This guide walks you through preparing your GitLab instance (gitlab.com or self-managed) to work with the AI Code Review Bot.
+This guide walks you through preparing your GitLab instance (gitlab.com or self-managed) to work with AI-Git-Bot.
 
 ## Limitations
 
@@ -170,6 +170,20 @@ After setup, create a test merge request. The bot should:
 > **Note:** The bot will **not** add 👀 reaction acknowledgements due to the GitLab API limitation mentioned above.
 
 Check the bot's application logs for troubleshooting if reviews don't appear.
+
+## Screenshots
+
+### Merge Request Code Review
+
+The bot automatically reviews merge requests and posts AI-generated feedback:
+
+<img src="screenshots/gitlab/gitlab-pull-request-with-code-review.png" alt="GitLab — Merge Request Code Review" width="700"/>
+
+### Autonomous Issue Implementation (Agent)
+
+Assign the bot to an issue and it will autonomously create a merge request with the implementation:
+
+<img src="screenshots/gitlab/gitlab_issue_agent_code_implementation.png" alt="GitLab — Agent Issue Implementation" width="700"/>
 
 ## Troubleshooting
 

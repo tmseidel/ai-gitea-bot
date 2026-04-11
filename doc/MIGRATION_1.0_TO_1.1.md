@@ -1,6 +1,6 @@
 # Migration Guide: 1.0.0 → 1.1.0
 
-This guide helps you upgrade AI Code Review Bot from version 1.0.0 to 1.1.0, which introduces a web-based management UI with multi-bot support.
+This guide helps you upgrade AI-Git-Bot from version 1.0.0 to 1.1.0, which introduces a web-based management UI with multi-bot support and the Gateway architecture.
 
 ## ⚠️ Breaking Changes
 

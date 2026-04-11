@@ -1,20 +1,25 @@
-# AI Code Review Bot
+# AI-Git-Bot
 
-AI-powered code review bot for **Gitea, GitHub, GitLab, and Bitbucket** with a **web-based management UI**. Supports multiple AI providers — Anthropic Claude, OpenAI, Ollama (local LLMs), and llama.cpp.
+> **Half Bot, half Agent** — The intelligent Gateway between Git platforms and AI providers. 🤖🧠
+
+AI-Git-Bot is a lightweight, self-hostable **Gateway application** for AI-powered code reviews and autonomous issue implementation. Connects **Gitea, GitHub, GitHub Enterprise, GitLab, and Bitbucket Cloud** with **Anthropic Claude, OpenAI, Ollama (local LLMs), and llama.cpp** — all managed through a **web-based UI**.
 
 ## Features
 
+- **Gateway Architecture** — Central hub connecting any Git platform with any AI provider
 - **Web-Based Management** — Configure bots, AI providers, and Git connections through a browser UI
-- **Multi-Bot Support** — Create multiple bots with different AI providers and prompts
+- **Multi-Bot Support** — Create multiple bots with different AI providers, prompts, and personas
 - **Multiple Git Providers** — Gitea, GitHub, GitHub Enterprise, GitLab, and Bitbucket Cloud support
-- **Automatic PR Reviews** — Reviews diffs when Pull Requests are opened or updated
 - **Multiple AI Providers** — Anthropic, OpenAI, Ollama, and llama.cpp support
+- **Automatic PR Reviews** — Reviews diffs when Pull Requests are opened or updated
 - **Interactive Bot Commands** — Mention the bot in PR comments to ask questions
 - **Inline Review Comments** — Context-aware answers to code-level review comments
+- **Issue Implementation Agent** — Assign the bot to an issue for autonomous code generation
+- **AI-Driven Code Validation** — Agent validates generated code with build tools (Maven, Gradle, npm, etc.)
 - **Session Management** — Maintains conversation history per PR
 - **Smart Diff Chunking** — Splits large diffs into chunks with retry on token limits
-- **Issue Implementation Agent** — Assign the bot to an issue for autonomous code generation
-- **Encrypted Secrets** — API keys and tokens are encrypted at rest
+- **Encrypted Secrets** — API keys and tokens are encrypted at rest (AES-256-GCM)
+- **Self-Host Friendly** — Run everything on-premise with local LLMs for compliance requirements
 
 ## Quick Start
 
@@ -33,7 +38,7 @@ Then:
 ```yaml
 services:
   app:
-    image: tmseidel/ai-gitea-bot:latest
+    image: tmseidel/ai-git-bot:latest
     ports:
       - "8080:8080"
     environment:
@@ -42,8 +47,6 @@ services:
       DATABASE_USERNAME: giteabot
       DATABASE_PASSWORD: change-me
       APP_ENCRYPTION_KEY: your-secure-encryption-key
-    volumes:
-      - ./prompts:/app/prompts:ro
     depends_on:
       db:
         condition: service_healthy
@@ -86,6 +89,8 @@ All AI configuration (API URLs, keys, models) is managed through the web UI — 
 | **Gitea** | Self-hosted Gitea instances |
 | **GitHub** | github.com |
 | **GitHub Enterprise** | Self-hosted GitHub Enterprise Server |
+| **GitLab** | gitlab.com and self-managed GitLab CE/EE |
+| **Bitbucket Cloud** | bitbucket.org |
 
 ## Environment Variables
 
@@ -106,24 +111,17 @@ All AI configuration (API URLs, keys, models) is managed through the web UI — 
 
 ## Webhook Setup
 
-Each bot gets a unique webhook URL displayed in the web UI:
-- **Gitea**: `/api/webhook/abc123-...`
-- **GitHub**: `/api/github-webhook/abc123-...`
+Each bot gets a unique webhook URL displayed in the web UI. The same URL format works for all Git providers:
 
-### For Gitea
+- `/api/webhook/{webhook-secret}`
 
-1. Go to your repository → **Settings → Webhooks → Add Webhook → Gitea**
-2. Set **Target URL** to your bot's webhook URL
-3. Select events: **Pull Request**, **Issue Comment**, **Pull Request Review**, **Pull Request Comment**
-4. Save the webhook
+### Supported Events per Platform
 
-### For GitHub
-
-1. Go to your repository → **Settings → Webhooks → Add webhook**
-2. Set **Payload URL** to your bot's webhook URL
-3. Set **Content type** to `application/json`
-4. Select events: **Pull requests**, **Issue comments**, **Pull request reviews**, **Pull request review comments**
-5. Save the webhook
+| Event | Gitea | GitHub | GitLab | Bitbucket |
+|-------|-------|--------|--------|-----------|
+| Pull Request | ✅ | ✅ | ✅ Merge request events | ✅ PR: Created/Updated |
+| Comments | ✅ Issue Comment | ✅ Issue comments | ✅ Comments | ✅ PR: Comment created |
+| Issues (Agent) | ✅ | ✅ | ✅ Issues events | — |
 
 ## Volumes
 
@@ -144,8 +142,11 @@ Built-in health check runs every 30s with a 30s start period.
 - [GitHub Repository](https://github.com/tmseidel/anthropic-gitea-bot)
 - [User Guide](https://github.com/tmseidel/anthropic-gitea-bot/blob/main/doc/USER_GUIDE.md)
 - [Architecture](https://github.com/tmseidel/anthropic-gitea-bot/blob/main/doc/ARCHITECTURE.md)
+- [Agent Documentation](https://github.com/tmseidel/anthropic-gitea-bot/blob/main/doc/AGENT.md)
 - [Gitea Setup Guide](https://github.com/tmseidel/anthropic-gitea-bot/blob/main/doc/GITEA_SETUP.md)
 - [GitHub Setup Guide](https://github.com/tmseidel/anthropic-gitea-bot/blob/main/doc/GITHUB_SETUP.md)
+- [GitLab Setup Guide](https://github.com/tmseidel/anthropic-gitea-bot/blob/main/doc/GITLAB_SETUP.md)
+- [Bitbucket Setup Guide](https://github.com/tmseidel/anthropic-gitea-bot/blob/main/doc/BITBUCKET_SETUP.md)
 - [Deployment Guide](https://github.com/tmseidel/anthropic-gitea-bot/blob/main/doc/DEPLOYMENT.md)
 
 ## License

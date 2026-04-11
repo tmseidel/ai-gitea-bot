@@ -1,6 +1,6 @@
 # Local Development
 
-This guide covers building, testing, and running the bot locally for development.
+This guide covers building, testing, and running AI-Git-Bot locally for development.
 
 ## Prerequisites
 

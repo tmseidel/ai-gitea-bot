@@ -1,28 +1,136 @@
-# AI Code Review Bot
+# AI-Git-Bot
 
-![AI Code Review Bot](doc/screenshot_small.png)
+[![Build](https://github.com/tmseidel/ai-git-bot/actions/workflows/build.yml/badge.svg)](https://github.com/tmseidel/ai-git-bot/actions/workflows/build.yml)
+[![License: MIT](https://img.shields.io/github/license/tmseidel/ai-git-bot)](LICENSE)
+[![Docker Pulls](https://img.shields.io/docker/pulls/tmseidel/ai-git-bot)](https://hub.docker.com/r/tmseidel/ai-git-bot)
+[![GitHub release](https://img.shields.io/github/v/release/tmseidel/ai-git-bot)](https://github.com/tmseidel/ai-git-bot/releases)
+[![GitHub stars](https://img.shields.io/github/stars/tmseidel/ai-git-bot)](https://github.com/tmseidel/ai-git-bot/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/tmseidel/ai-git-bot)](https://github.com/tmseidel/ai-git-bot/issues)
 
-A Spring Boot application that connects your Git hosting platform with AI providers to deliver automated, AI-powered code reviews on Pull Requests. The bot supports **multiple AI providers** — Anthropic Claude, OpenAI, Ollama (local LLMs), and llama.cpp — and **multiple Git providers** — Gitea, GitHub, GitHub Enterprise, GitLab, and Bitbucket Cloud. It can review new PRs, respond to questions in comments, and answer inline review comments while maintaining conversation context across interactions.
+> **Your intelligent gateway between Git and AI — Half Bot, half Agent.** 🤖🧠
+
+AI-Git-Bot is a lightweight, self-hostable **gateway application** that connects your Git platforms with AI providers. As a central hub it receives webhooks from **Gitea, GitHub, GitHub Enterprise, GitLab, and Bitbucket Cloud**, routes them to configurable AI providers, and writes the results back as code reviews, comments, or even entire pull requests — fully automated.
+
+<p align="center">
+  <img src="doc/images/schema.png" alt="AI-Git-Bot Architecture Schema" width="800"/>
+</p>
+
+## 🎯 Who is AI-Git-Bot for?
+
+| Audience | Benefit |
+|----------|---------|
+| 🧑‍💻 **Developers who want a personalized code AI** | Configure your own AI with custom system prompts — for code reviews that match your tech stack and coding standards. |
+| 🔄 **Teams with multiple projects & Git systems** | Define an AI configuration once and reuse it across any number of repositories, projects, and Git platforms — through a single gateway. |
+| 👥 **Multi-pass reviews with different personas** | Create multiple bots with different prompts: a security reviewer, a performance expert, a junior mentor — all on the same PR. |
+| 🔒 **Self-hosters with compliance requirements** | Run everything on-premise with local LLMs (Ollama, llama.cpp). No code leaves your infrastructure — ideal for regulatory and compliance needs. |
+| ⚡ **Lightweight AI implementation** | A single Docker image, one PostgreSQL database — done. No complex infrastructure, no Kubernetes clusters required. |
+
+## 🤖🧠 Half Bot, Half Agent
+
+AI-Git-Bot unites two worlds:
+
+- **As a Bot** it automatically reacts to pull requests, answers questions in comments, and delivers context-aware inline reviews — like a reliable code-review partner that never sleeps.
+- **As an Agent** it autonomously takes on entire issues: it analyzes the task, reads the source code, generates an implementation, validates the code with build tools, and creates a finished pull request — all on its own.
+
+> More than a bot. More than an agent. **The intelligent gateway for your entire code review and implementation workflow.**
+
+<p align="center">
+  <img src="doc/images/dashboard_ai_git_bot.PNG" alt="AI-Git-Bot Dashboard" width="800"/>
+</p>
+
+## 🌉 The Gateway Principle
+
+AI-Git-Bot acts as a **central gateway** between your Git systems and AI providers:
+
+```mermaid
+graph LR
+    subgraph Git Platforms
+        Gitea
+        GitHub
+        GitLab
+        Bitbucket
+    end
+
+    subgraph AI Providers
+        Anthropic
+        OpenAI
+        Ollama
+        llama.cpp
+    end
+
+    Gateway["🌉 AI-Git-Bot\n(Gateway)"]
+    DB["🗄️ PostgreSQL\n(Config & Sessions)"]
+
+    Gitea <--> Gateway
+    GitHub <--> Gateway
+    GitLab <--> Gateway
+    Bitbucket <--> Gateway
+    Gateway <--> Anthropic
+    Gateway <--> OpenAI
+    Gateway <--> Ollama
+    Gateway <--> llama.cpp
+    Gateway --> DB
+```
+
+**Benefits of the gateway approach:**
+
+- 🔗 **One configuration, many repositories** — Set up once, use everywhere
+- 🔀 **Mix & match** — Combine different AI providers with different Git platforms
+- 🛡️ **Centralized control** — Manage API keys, tokens, and prompts in one place
+- 📊 **Unified monitoring** — Dashboard with statistics across all bots
+- 🔐 **Encrypted secrets** — API keys and tokens are stored with AES-256-GCM encryption
 
 ## Features
 
 ### 🔍 Automatic PR Code Reviews
 
-When a Pull Request is opened or updated, the bot automatically reviews the diff and posts feedback as a review comment. Large diffs are intelligently split into chunks with automatic retry on token limits.
+When a pull request is opened or updated, the bot automatically reviews the diff and posts feedback as a review comment. Large diffs are intelligently split into chunks with automatic retry on token limits.
 
-<img src="doc/screenshot_initial_code_review.png" alt="Initial Code Review" width="600"/>
+<details>
+<summary>📸 Screenshots: Code reviews across platforms</summary>
+
+**Gitea:**
+<img src="doc/screenshots/gitea/screenshot_initial_code_review.png" alt="Gitea Code Review" width="600"/>
+
+**GitHub:**
+<img src="doc/screenshots/github/github_code_review_with_comment.png" alt="GitHub Code Review" width="600"/>
+
+**GitLab:**
+<img src="doc/screenshots/gitlab/gitlab-pull-request-with-code-review.png" alt="GitLab Code Review" width="600"/>
+
+**Bitbucket:**
+<img src="doc/screenshots/bitbucket/bitbucket-code-review.png" alt="Bitbucket Code Review" width="600"/>
+
+</details>
 
 ### 💬 Interactive Bot Commands
 
-Mention the bot (e.g., `@ai_bot`) in any PR comment to ask questions or request additional analysis. The bot acknowledges with 👀 and responds using the full conversation history.
+Mention the bot (e.g. `@ai_bot`) in any PR comment to ask questions or request additional analysis. The bot acknowledges with 👀 and responds using the full conversation history.
 
-<img src="doc/screenshot_code_review_with_comment.png" alt="Code Review with Comment" width="600"/>
+<img src="doc/screenshots/gitea/screenshot_code_review_with_comment.png" alt="Code Review with Comment" width="600"/>
 
 ### 📝 Inline Review Comment Responses
 
 Mention the bot in an inline review comment on a specific code line. The bot includes the file context and diff hunk when generating its answer and replies directly inline.
 
-<img src="doc/screenshot_code_review_with_inline_comment.png" alt="Code Review with Inline Comment" width="600"/>
+<img src="doc/screenshots/gitea/screenshot_code_review_with_inline_comment.png" alt="Code Review with Inline Comment" width="600"/>
+
+### 🤖 Autonomous Issue Implementation Agent
+
+Assign the bot to an issue — it analyzes the task, reads the source code, generates an implementation, validates with build tools, and creates a finished pull request. Fully autonomous.
+
+<details>
+<summary>📸 Screenshots: Agent across platforms</summary>
+
+**GitHub:**
+<img src="doc/screenshots/github/github_issue_agent_code_implementation.png" alt="GitHub Agent" width="600"/>
+
+**GitLab:**
+<img src="doc/screenshots/gitlab/gitlab_issue_agent_code_implementation.png" alt="GitLab Agent" width="600"/>
+
+</details>
+
+See the [Agent Documentation](doc/AGENT.md) for details.
 
 ### 🖥️ Web-Based Management
 
@@ -33,9 +141,7 @@ All configuration is managed through a **web-based UI** — no environment varia
 - Create multiple **Bots**, each with its own webhook URL, AI provider, and system prompt
 - Dashboard with statistics and monitoring
 
-### 🔌 Multiple AI Providers
-
-Choose the AI provider that fits your needs:
+### 🔌 Supported AI Providers
 
 | Provider | Default API URL | Suggested Models |
 |----------|-----------------|------------------|
@@ -44,9 +150,7 @@ Choose the AI provider that fits your needs:
 | **Ollama** | `http://localhost:11434` | User-configured local models |
 | **llama.cpp** | `http://localhost:8081` | User-configured GGUF models |
 
-### 🌐 Multiple Git Providers
-
-Connect to your preferred Git hosting platform:
+### 🌐 Supported Git Platforms
 
 | Provider | Description |
 |----------|-------------|
@@ -58,9 +162,9 @@ Connect to your preferred Git hosting platform:
 
 ### More Features
 
-- **Issue Implementation Agent** — Assign the bot to an issue and it will autonomously implement changes and create a PR (see [Agent Documentation](doc/AGENT.md))
-- **Session Management** — Maintains conversation history per PR, persisted in a database, enabling context-aware follow-up reviews
+- **Session Management** — Maintains conversation history per PR, persisted in the database, enabling context-aware follow-up reviews
 - **Configurable System Prompts** — Select from built-in prompt templates or define custom prompts per bot
+- **AI-Driven Code Validation** — The agent validates generated code with build tools (Maven, Gradle, npm, Go, Cargo, etc.)
 - **Health Endpoint** — `/actuator/health` for monitoring and orchestration
 
 ## Docker
@@ -70,21 +174,15 @@ The bot is available as a Docker image on [Docker Hub](https://hub.docker.com/r/
 ```yaml
 services:
   app:
-    image: tmseidel/anthropic-gitea-bot:latest
+    image: tmseidel/ai-gitea-bot:latest
     ports:
       - "8080:8080"
     environment:
       SPRING_PROFILES_ACTIVE: docker
-      GITEA_URL: ${GITEA_URL:-https://your-gitea-instance.com}
-      GITEA_TOKEN: ${GITEA_TOKEN}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-20250514}
-      BOT_ALIAS: ${BOT_ALIAS:-@claude_bot}
       DATABASE_URL: jdbc:postgresql://db:5432/giteabot
       DATABASE_USERNAME: ${DATABASE_USERNAME:-giteabot}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:-giteabot}
-    volumes:
-      - ./prompts:/app/prompts:ro
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-change-me}
     depends_on:
       db:
         condition: service_healthy
@@ -109,7 +207,6 @@ volumes:
   pgdata:
 ```
 
-
 ## Quick Start
 
 ### 1. Start the Application
@@ -132,7 +229,7 @@ This starts:
 
 1. **Create an AI Integration:**
    - Go to **AI Integrations → New Integration**
-   - Select a provider (e.g., "anthropic")
+   - Select a provider (e.g. "anthropic")
    - The API URL is auto-filled with the provider's default
    - Select a model from the dropdown or enter a custom model name
    - Enter your API key
@@ -141,7 +238,7 @@ This starts:
    - Go to **Git Integrations → New Integration**
    - Select your provider (Gitea, GitHub, GitLab, or Bitbucket)
    - Enter your Git server URL and API token
-   - See [Gitea Setup](doc/GITEA_SETUP.md), [GitHub Setup](doc/GITHUB_SETUP.md), [GitLab Setup](doc/GITLAB_SETUP.md), or [Bitbucket Setup](doc/BITBUCKET_SETUP.md) for detailed token creation
+   - See [Gitea Setup](doc/GITEA_SETUP.md), [GitHub Setup](doc/GITHUB_SETUP.md), [GitLab Setup](doc/GITLAB_SETUP.md), or [Bitbucket Setup](doc/BITBUCKET_SETUP.md)
 
 3. **Create a Bot:**
    - Go to **Bots → New Bot**
@@ -153,34 +250,19 @@ This starts:
 
 Configure webhooks in your Git provider to notify the bot about PR events.
 
-**For Gitea:** See [Gitea Setup](doc/GITEA_SETUP.md#4-configure-webhooks)
+- **Gitea:** See [Gitea Setup](doc/GITEA_SETUP.md#4-configure-webhooks)
+- **GitHub:** See [GitHub Setup](doc/GITHUB_SETUP.md#4-configure-webhooks)
+- **GitLab:** See [GitLab Setup](doc/GITLAB_SETUP.md#4-configure-webhooks)
+- **Bitbucket Cloud:** See [Bitbucket Setup](doc/BITBUCKET_SETUP.md#step-4-configure-the-webhook-in-bitbucket)
 
-**For GitHub:**
-
-1. Go to **Settings → Webhooks → Add webhook**
-2. Paste the bot's webhook URL
-3. Select events: Pull requests, Pull request reviews, Pull request review comments, Issue comments
-
-See [GitHub Setup](doc/GITHUB_SETUP.md#4-configure-webhooks) for detailed instructions.
-
-**For GitLab:**
-
-1. Go to **Settings → Webhooks → Add new webhook**
-2. Paste the bot's webhook URL
-3. Enable triggers: Merge request events, Comments
-
-See [GitLab Setup](doc/GITLAB_SETUP.md#4-configure-webhooks) for detailed instructions.
-
-**For Bitbucket Cloud:** See [Bitbucket Setup](doc/BITBUCKET_SETUP.md#step-4-configure-the-webhook-in-bitbucket)
-
-See [User Guide](doc/USER_GUIDE.md) for detailed instructions.
+See the [User Guide](doc/USER_GUIDE.md) for detailed instructions.
 
 ## Architecture Overview
 
 ```mermaid
 graph LR
-    Git["Git Provider<br/>(Gitea / GitHub / GitLab / Bitbucket)"]
-    Bot["AI Code Review Bot<br/>(Spring Boot)"]
+    Git["Git Platform<br/>(Gitea / GitHub / GitLab / Bitbucket)"]
+    Bot["AI-Git-Bot<br/>(Gateway)"]
     AI["AI Provider<br/>(Anthropic / OpenAI / Ollama / llama.cpp)"]
     DB["PostgreSQL"]
 
@@ -192,15 +274,15 @@ graph LR
 
 The bot receives webhooks from your Git provider, fetches PR diffs, sends them to the configured AI provider for review, and posts the results back. All configuration (AI integrations, Git integrations, bots) and conversation sessions are persisted in the database.
 
-➡️ See [Architecture Documentation](doc/ARCHITECTURE.md) for detailed component diagrams and request flows.
+➡️ See the [Architecture Documentation](doc/ARCHITECTURE.md) for detailed component diagrams and request flows.
 
 ## Documentation
 
 | Document | Description |
-|---|---|
+|----------|-------------|
 | [User Guide](doc/USER_GUIDE.md) | Web UI usage, creating bots and integrations |
 | [Architecture](doc/ARCHITECTURE.md) | Component diagrams, request flows, webhook routing |
-| [Agent](doc/AGENT.md) | Autonomous issue implementation agent setup and usage |
+| [Agent](doc/AGENT.md) | Autonomous issue implementation agent — setup and usage |
 | **Git Provider Setup** | |
 | [Gitea Setup](doc/GITEA_SETUP.md) | Bot user creation, permissions, API tokens for Gitea |
 | [GitHub Setup](doc/GITHUB_SETUP.md) | Bot user creation, permissions, PAT tokens for GitHub |

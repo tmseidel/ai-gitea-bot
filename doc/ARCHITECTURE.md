@@ -1,13 +1,22 @@
-# Architecture
+# Architecture — AI-Git-Bot
 
-This document describes the high-level architecture of the AI Code Review Bot, including component responsibilities and request flows.
+This document describes the high-level architecture of the AI-Git-Bot, the intelligent **Gateway** between Git platforms and AI providers. It covers component responsibilities, the Gateway design pattern, and request flows.
+
+## The Gateway Concept
+
+AI-Git-Bot acts as a **central gateway** that decouples Git hosting platforms from AI providers. This means:
+
+- **Any Git platform** (Gitea, GitHub, GitLab, Bitbucket) can be connected with **any AI provider** (Anthropic, OpenAI, Ollama, llama.cpp)
+- Multiple bots with different configurations can run in parallel
+- All webhook routing, session management, and credential handling is centralized in a single application
+- The same AI configuration can serve multiple repositories across different Git platforms
 
 ## System Overview
 
 ```mermaid
 graph LR
-    Git["Git Provider<br/>(Gitea / GitHub / GitLab / Bitbucket)"]
-    Bot["AI Code Review Bot"]
+    Git["Git Platform<br/>(Gitea / GitHub / GitLab / Bitbucket)"]
+    Bot["AI-Git-Bot<br/>(Gateway)"]
     AI["AI Provider<br/>(Anthropic / OpenAI / Ollama / llama.cpp)"]
     DB["PostgreSQL Database"]
 
@@ -21,9 +30,9 @@ graph LR
     Bot -- "Config & Sessions" --> DB
 ```
 
-The bot sits between a Git hosting platform (Gitea, GitHub, GitLab, or Bitbucket) and a configurable AI provider. When a pull request is opened or updated, the Git provider sends a webhook to the bot. The bot fetches the diff, sends it to the configured AI provider for review, and posts the review back as a PR comment. All configuration (AI integrations, Git integrations, bots) and conversation sessions are persisted in a database.
+The gateway sits between Git hosting platforms (Gitea, GitHub, GitLab, or Bitbucket) and configurable AI providers. When a pull request is opened or updated, the Git provider sends a webhook to the gateway. The gateway fetches the diff, sends it to the configured AI provider for review, and posts the review back as a PR comment. All configuration (AI integrations, Git integrations, bots) and conversation sessions are persisted in a database.
 
-The bot also responds to inline review comments and submitted reviews containing bot mentions by fetching the relevant review data from the Git API and posting context-aware replies.
+The gateway also responds to inline review comments and submitted reviews containing bot mentions by fetching the relevant review data from the Git API and posting context-aware replies. In **agent mode**, it can autonomously implement issues by reading source code, generating changes, validating them with build tools, and creating pull requests.
 
 ## Component Diagram
 

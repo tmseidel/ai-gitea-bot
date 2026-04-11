@@ -1,6 +1,6 @@
 # Issue Implementation Agent
 
-The AI Code Review Bot includes an **autonomous issue implementation agent** that can be assigned to issues in your Git hosting platform (Gitea or GitHub). When assigned, the agent analyzes the issue description, generates an implementation plan using AI, and automatically creates a pull request with the proposed changes.
+AI-Git-Bot includes an **autonomous issue implementation agent** — the "Agent" half of *"Half Bot, half Agent"*. Assign the bot to an issue in your Git hosting platform (Gitea, GitHub, or GitLab), and it will autonomously analyze the issue description, generate an implementation plan using AI, validate the code with build tools, and automatically create a pull request with the proposed changes.
 
 ## How It Works
 

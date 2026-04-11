@@ -1,6 +1,6 @@
 # Using llama.cpp
 
-This guide covers running the AI Code Review Bot with [llama.cpp](https://github.com/ggerganov/llama.cpp) for local, private AI-powered code reviews using GGUF model files — no external API keys required.
+This guide covers running AI-Git-Bot with [llama.cpp](https://github.com/ggerganov/llama.cpp) for local, private AI-powered code reviews using GGUF model files — no external API keys required. This is ideal for self-hosters with compliance requirements who cannot send code to external services.
 
 ## Overview
 
@@ -28,46 +28,37 @@ docker compose -f systemtest/docker-compose-llamacpp.yml up -d
 
 # Wait for model download (~5GB) and server startup
 docker compose -f systemtest/docker-compose-llamacpp.yml logs -f model-downloader
-
-# Then start the bot with llama.cpp provider
-export AI_PROVIDER=llamacpp
-export AI_MODEL=qwen2.5-coder-7b-instruct
-export AI_LLAMACPP_API_URL=http://localhost:8081
-export GITEA_URL=https://your-gitea-instance.com
-export GITEA_TOKEN=your-gitea-api-token
-
-docker compose up -d
 ```
+
+Then start the bot and configure the AI Integration in the **web UI**:
+
+1. Go to **AI Integrations → New Integration**
+2. Select **llamacpp** as the provider type
+3. Set the **API URL** to `http://localhost:8081`
+4. Enter the **Model** name (e.g., `qwen2.5-coder-7b-instruct`)
+5. Click **Save**
 
 **For CPU-only systems**, the default docker-compose uses the CPU-only image. For GPU acceleration, change the image to `ghcr.io/ggml-org/llama.cpp:server-cuda13` and uncomment the `deploy.resources` section.
 
 ## Configuration
 
-### Environment Variables
+All AI provider settings are configured through the **web UI** under **AI Integrations**:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `AI_PROVIDER` | `anthropic` | Set to `llamacpp` to use llama.cpp |
-| `AI_MODEL` | - | Model identifier (informational, actual model is set in server) |
-| `AI_LLAMACPP_API_URL` | `http://localhost:8081` | llama.cpp server base URL |
-| `AI_MAX_TOKENS` | `4096` | Max tokens per response |
-| `AI_MAX_DIFF_CHARS_PER_CHUNK` | `120000` | Max characters per diff chunk |
-| `AI_MAX_DIFF_CHUNKS` | `8` | Maximum number of chunks to review |
-| `AGENT_MAX_FILE_CONTENT_CHARS` | `100000` | Max chars of file content in agent prompts (use ~20000 for 16k context) |
+1. Go to **AI Integrations → New Integration**
+2. Select **llamacpp** as the provider type
+3. Set the **API URL** to your llama.cpp server (e.g., `http://localhost:8081` or `http://llamacpp:8081` if using Docker networking)
+4. Enter the **Model** name (informational — the actual model is set in the llama.cpp server)
+5. Adjust settings as needed:
 
-### Application Properties
+| Setting | Recommended Value | Why |
+|---------|-------------------|-----|
+| **Max Tokens** | `4096` | Default, increase for longer responses |
+| **Max Diff Chars Per Chunk** | `30000` | Fits in smaller context windows (use `120000` for large contexts) |
+| **Max Diff Chunks** | `4` | Reduces processing time (use `8` for large contexts) |
 
-```properties
-ai.provider=llamacpp
-ai.model=qwen2.5-coder-7b-instruct
-ai.llamacpp.api-url=http://localhost:8081
-ai.max-tokens=4096
-ai.max-diff-chars-per-chunk=30000
-ai.max-diff-chunks=4
+6. Click **Save**
 
-# For agent feature with 16k context, limit file content
-agent.max-file-content-chars=20000
-```
+> **Tip:** For the agent feature with a 16k context model, reduce **Max Diff Chars Per Chunk** to `20000` to leave room for issue descriptions and file contents.
 
 ## Recommended Models for Coding
 
@@ -261,19 +252,10 @@ Enable parallel request handling:
 
 ## Integration with Docker Compose
 
-Add llama.cpp to your existing `docker-compose.yml`:
+Add llama.cpp to your existing `docker-compose.yml`. The bot will connect to it via the API URL configured in the web UI:
 
 ```yaml
 services:
-  app:
-    environment:
-      AI_PROVIDER: llamacpp
-      AI_MODEL: qwen2.5-coder-7b-instruct
-      AI_LLAMACPP_API_URL: http://llamacpp:8081
-    depends_on:
-      llamacpp:
-        condition: service_healthy
-
   llamacpp:
     image: ghcr.io/ggml-org/llama.cpp:server  # or server-cuda13 for GPU
     ports:
@@ -300,23 +282,19 @@ services:
               capabilities: [gpu]
 ```
 
+Then configure the AI Integration in the web UI with API URL `http://llamacpp:8081` (or `http://localhost:8081` if the bot runs outside Docker).
+
 ## Troubleshooting
 
 ### Short or Generic Reviews
 
 Local models may produce shorter responses than cloud providers. To get more detailed reviews:
 
-1. **Use the `local-llm` prompt** - Specifically designed for local models with more explicit instructions:
-   ```
-   # In your Gitea webhook URL, add:
-   ?prompt=local-llm
-   
-   # Example: http://your-bot:8080/api/webhook?prompt=local-llm
-   ```
+1. **Use the `local-llm` prompt** — Select the "Local LLM" system prompt template when creating or editing your bot in the web UI. This prompt is specifically designed for local models with more explicit instructions.
 
-2. **Use a larger model** - 14B+ models produce more detailed output
+2. **Use a larger model** — 14B+ models produce more detailed output
 
-3. **Increase max tokens** - Set `AI_MAX_TOKENS=8192` for longer responses
+3. **Increase Max Tokens** — Set **Max Tokens** to `8192` in the AI Integration settings via the web UI
 
 ### Server Not Starting
 
@@ -335,7 +313,7 @@ docker compose -f systemtest/docker-compose-llamacpp.yml logs llamacpp
 
 - Enable GPU acceleration (`--n-gpu-layers -1`)
 - Use a smaller model (7B instead of 13B)
-- Reduce `AI_MAX_DIFF_CHARS_PER_CHUNK`
+- Reduce **Max Diff Chars Per Chunk** in the AI Integration settings via the web UI
 
 ### Connection Refused
 

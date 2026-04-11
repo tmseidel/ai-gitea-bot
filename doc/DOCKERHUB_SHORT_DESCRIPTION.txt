@@ -1,2 +1,1 @@
-AI-powered code review bot for Gitea & GitHub with web UI. Multi-bot support, Anthropic/OpenAI/Ollama/llama.cpp providers, PR reviews, interactive comments, issue implementation agent.
-
+AI-Git-Bot — Intelligent Gateway between Git & AI. Half Bot, half Agent. Multi-platform (Gitea/GitHub/GitLab/Bitbucket), multi-AI (Anthropic/OpenAI/Ollama/llama.cpp), web UI, autonomous issue agent.
