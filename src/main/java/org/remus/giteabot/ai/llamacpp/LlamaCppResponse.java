@@ -4,56 +4,82 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
-import java.util.List;
-
 /**
- * Response model for llama.cpp server's OpenAI-compatible chat completions endpoint.
+ * Response model for llama.cpp server's native /completion endpoint.
  */
 @Data
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class LlamaCppResponse {
 
-    private String id;
+    /**
+     * The generated completion text.
+     */
+    private String content;
 
-    private String object;
-
-    private Long created;
-
+    /**
+     * The model used for generation.
+     */
     private String model;
 
-    private List<Choice> choices;
+    /**
+     * Reason for stopping generation.
+     */
+    private String stop;
 
-    private Usage usage;
+    /**
+     * Whether generation was stopped due to hitting a stop sequence.
+     */
+    @JsonProperty("stopped_eos")
+    private Boolean stoppedEos;
+
+    /**
+     * Whether generation was stopped due to hitting max tokens.
+     */
+    @JsonProperty("stopped_limit")
+    private Boolean stoppedLimit;
+
+    /**
+     * Whether generation was stopped due to hitting a stop word.
+     */
+    @JsonProperty("stopped_word")
+    private Boolean stoppedWord;
+
+    /**
+     * Number of tokens in the prompt.
+     */
+    @JsonProperty("tokens_evaluated")
+    private Integer tokensEvaluated;
+
+    /**
+     * Number of tokens generated.
+     */
+    @JsonProperty("tokens_predicted")
+    private Integer tokensPredicted;
+
+    /**
+     * Whether the response was truncated.
+     */
+    private Boolean truncated;
+
+    /**
+     * Generation timings.
+     */
+    private Timings timings;
 
     @Data
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class Choice {
-        private Integer index;
+    public static class Timings {
+        @JsonProperty("prompt_n")
+        private Integer promptN;
 
-        private Message message;
+        @JsonProperty("prompt_ms")
+        private Double promptMs;
 
-        @JsonProperty("finish_reason")
-        private String finishReason;
-    }
+        @JsonProperty("predicted_n")
+        private Integer predictedN;
 
-    @Data
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class Message {
-        private String role;
-        private String content;
-    }
-
-    @Data
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class Usage {
-        @JsonProperty("prompt_tokens")
-        private Integer promptTokens;
-
-        @JsonProperty("completion_tokens")
-        private Integer completionTokens;
-
-        @JsonProperty("total_tokens")
-        private Integer totalTokens;
+        @JsonProperty("predicted_ms")
+        private Double predictedMs;
     }
 }
 

@@ -3,7 +3,9 @@ package org.remus.giteabot.repository.model;
 /**
  * Provider-agnostic interface for a pull request review comment.
  * Implementations exist for Gitea ({@link org.remus.giteabot.gitea.model.GiteaReviewComment}),
- * with future support for GitLab, Bitbucket, etc.
+ * GitHub ({@link org.remus.giteabot.github.model.GitHubReviewComment}), and Bitbucket Cloud
+ * ({@link org.remus.giteabot.bitbucket.model.BitbucketReviewComment}),
+ * with future support for GitLab, etc.
  */
 public interface ReviewComment {
 

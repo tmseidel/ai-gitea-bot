@@ -1,59 +1,96 @@
 # Architecture
 
-This document describes the high-level architecture of the AI Gitea Bot, including component responsibilities and request flows.
+This document describes the high-level architecture of the AI Code Review Bot, including component responsibilities and request flows.
 
 ## System Overview
 
 ```mermaid
 graph LR
-    Gitea["Gitea Instance"]
-    Bot["AI Gitea Bot"]
+    Git["Git Provider<br/>(Gitea / GitHub)"]
+    Bot["AI Code Review Bot"]
     AI["AI Provider<br/>(Anthropic / OpenAI / Ollama / llama.cpp)"]
     DB["PostgreSQL Database"]
 
-    Gitea -- "Webhook (PR/Comment/Review event)" --> Bot
-    Bot -- "Fetch PR diff" --> Gitea
-    Bot -- "Post review/comment" --> Gitea
-    Bot -- "Fetch reviews & comments" --> Gitea
-    Bot -- "Add reaction" --> Gitea
+    Git -- "Webhook (PR/Comment/Review event)" --> Bot
+    Bot -- "Fetch PR diff" --> Git
+    Bot -- "Post review/comment" --> Git
+    Bot -- "Fetch reviews & comments" --> Git
+    Bot -- "Add reaction" --> Git
     Bot -- "Review diff / Chat" --> AI
     AI -- "Review text" --> Bot
-    Bot -- "Persist/Load session" --> DB
+    Bot -- "Config & Sessions" --> DB
 ```
 
-The bot sits between a Gitea instance and a configurable AI provider. When a pull request is opened or updated, Gitea sends a webhook to the bot. The bot fetches the diff, sends it to the configured AI provider for review, and posts the review back as a PR comment. Conversation sessions are persisted in a database so the bot maintains context across PR updates and comment interactions.
+The bot sits between a Git hosting platform (Gitea or GitHub) and a configurable AI provider. When a pull request is opened or updated, the Git provider sends a webhook to the bot. The bot fetches the diff, sends it to the configured AI provider for review, and posts the review back as a PR comment. All configuration (AI integrations, Git integrations, bots) and conversation sessions are persisted in a database.
 
-The bot also responds to inline review comments and submitted reviews containing bot mentions by fetching the relevant review data from the Gitea API and posting context-aware replies.
+The bot also responds to inline review comments and submitted reviews containing bot mentions by fetching the relevant review data from the Git API and posting context-aware replies.
 
 ## Component Diagram
 
 ```mermaid
 graph TD
     subgraph "Spring Boot Application"
-        Controller["GiteaWebhookController<br/><i>REST endpoint</i>"]
-        ReviewService["CodeReviewService<br/><i>Orchestration</i>"]
-        SessionService["SessionService<br/><i>Session lifecycle</i>"]
-        PromptService["PromptService<br/><i>Prompt resolution</i>"]
-        GiteaClient["GiteaApiClient<br/><i>Gitea REST calls</i>"]
-
-        subgraph "AI Abstraction Layer"
-            AiInterface["AiClient<br/><i>Interface</i>"]
-            AbstractClient["AbstractAiClient<br/><i>Chunking & retry logic</i>"]
-            AnthropicImpl["AnthropicAiClient"]
-            OpenAiImpl["OpenAiClient"]
-            OllamaImpl["OllamaClient"]
-            LlamaCppImpl["LlamaCppClient"]
+        subgraph "Web Layer"
+            GiteaWebhookController["GiteaWebhookController<br/><i>Gitea webhook endpoints</i>"]
+            GitHubWebhookController["GitHubWebhookController<br/><i>GitHub webhook endpoints</i>"]
+            AdminControllers["Admin Controllers<br/><i>Dashboard, Bots, Integrations</i>"]
+            SetupController["SetupController<br/><i>Initial setup</i>"]
+        end
+        
+        subgraph "Service Layer"
+            BotService["BotService<br/><i>Bot CRUD</i>"]
+            BotWebhookService["BotWebhookService<br/><i>Webhook processing</i>"]
+            AiIntegrationService["AiIntegrationService<br/><i>AI config CRUD</i>"]
+            GitIntegrationService["GitIntegrationService<br/><i>Git config CRUD</i>"]
+            SessionService["SessionService<br/><i>Session lifecycle</i>"]
+            EncryptionService["EncryptionService<br/><i>API key encryption</i>"]
         end
 
-        AppConfig["AppConfig<br/><i>Conditional bean creation</i>"]
-        AiConfig["AiConfigProperties<br/><i>Provider config</i>"]
-        PromptConfig["PromptConfigProperties<br/><i>Prompt definitions</i>"]
-        BotConfig["BotConfigProperties<br/><i>Bot alias config</i>"]
-        SessionRepo["ReviewSessionRepository<br/><i>JPA repository</i>"]
+        subgraph "AI Provider Layer"
+            AiClientFactory["AiClientFactory<br/><i>Client creation & caching</i>"]
+            AiProviderRegistry["AiProviderRegistry<br/><i>Provider discovery</i>"]
+            subgraph "Provider Metadata"
+                AnthropicMeta["AnthropicProviderMetadata"]
+                OpenAiMeta["OpenAiProviderMetadata"]
+                OllamaMeta["OllamaProviderMetadata"]
+                LlamaCppMeta["LlamaCppProviderMetadata"]
+            end
+            subgraph "AI Clients"
+                AiInterface["AiClient<br/><i>Interface</i>"]
+                AbstractClient["AbstractAiClient<br/><i>Chunking & retry</i>"]
+                AnthropicImpl["AnthropicAiClient"]
+                OpenAiImpl["OpenAiClient"]
+                OllamaImpl["OllamaClient"]
+                LlamaCppImpl["LlamaCppClient"]
+            end
+        end
+
+        subgraph "Repository Provider Layer"
+            RepoClientFactory["RepositoryClientFactory<br/><i>Client creation</i>"]
+            RepoProviderRegistry["RepositoryProviderRegistry<br/><i>Provider discovery</i>"]
+            subgraph "Repository Provider Metadata"
+                GiteaMeta["GiteaProviderMetadata"]
+                GitHubMeta["GitHubProviderMetadata"]
+            end
+            subgraph "Repository Clients"
+                RepoInterface["RepositoryApiClient<br/><i>Interface</i>"]
+                GiteaClient["GiteaApiClient"]
+                GitHubClient["GitHubApiClient"]
+            end
+        end
+
+        subgraph "Repository Layer"
+            BotRepo["BotRepository"]
+            AiIntegrationRepo["AiIntegrationRepository"]
+            GitIntegrationRepo["GitIntegrationRepository"]
+            SessionRepo["ReviewSessionRepository"]
+            AdminRepo["AdminUserRepository"]
+        end
     end
 
     subgraph "External"
         Gitea["Gitea"]
+        GitHub["GitHub / GitHub Enterprise"]
         Anthropic["Anthropic API"]
         OpenAI["OpenAI API"]
         Ollama["Ollama (local)"]
@@ -62,34 +99,92 @@ graph TD
         DB["Database<br/><i>PostgreSQL / H2</i>"]
     end
 
-    Controller --> ReviewService
-    Controller --> BotConfig
-    ReviewService --> BotConfig
-    ReviewService --> PromptService
-    ReviewService --> GiteaClient
-    ReviewService --> AiInterface
-    ReviewService --> SessionService
-    SessionService --> SessionRepo
-    SessionRepo --> DB
-    PromptService --> PromptConfig
-    PromptService --> PromptFiles
-    GiteaClient --> Gitea
+    GiteaWebhookController --> BotService
+    GiteaWebhookController --> BotWebhookService
+    GitHubWebhookController --> BotService
+    GitHubWebhookController --> BotWebhookService
+    BotWebhookService --> AiClientFactory
+    BotWebhookService --> RepoClientFactory
+    BotWebhookService --> SessionService
+    AiClientFactory --> AiProviderRegistry
+    AiClientFactory --> AiIntegrationService
+    RepoClientFactory --> RepoProviderRegistry
+    RepoClientFactory --> GitIntegrationService
+    AiProviderRegistry --> AnthropicMeta
+    AiProviderRegistry --> OpenAiMeta
+    AiProviderRegistry --> OllamaMeta
+    AiProviderRegistry --> LlamaCppMeta
+    RepoProviderRegistry --> GiteaMeta
+    RepoProviderRegistry --> GitHubMeta
+    AnthropicMeta --> AnthropicImpl
+    OpenAiMeta --> OpenAiImpl
+    OllamaMeta --> OllamaImpl
+    LlamaCppMeta --> LlamaCppImpl
+    GiteaMeta --> GiteaClient
+    GitHubMeta --> GitHubClient
     AiInterface -.-> AbstractClient
     AbstractClient -.-> AnthropicImpl
     AbstractClient -.-> OpenAiImpl
     AbstractClient -.-> OllamaImpl
     AbstractClient -.-> LlamaCppImpl
+    RepoInterface -.-> GiteaClient
+    RepoInterface -.-> GitHubClient
     AnthropicImpl --> Anthropic
     OpenAiImpl --> OpenAI
     OllamaImpl --> Ollama
     LlamaCppImpl --> LlamaCpp
-    AppConfig --> AiConfig
-    AppConfig --> AiInterface
+    GiteaClient --> Gitea
+    GitHubClient --> GitHub
+    BotRepo --> DB
+    SessionRepo --> DB
 ```
 
-## AI Provider Abstraction
+## AI Provider Architecture
 
-The bot uses a provider-agnostic `AiClient` interface to decouple review logic from any specific AI service:
+The bot uses a **provider-agnostic abstraction layer** with metadata-driven configuration:
+
+### AiProviderMetadata Interface
+
+Each AI provider implements `AiProviderMetadata` to define:
+- Provider type identifier (e.g., "anthropic", "openai")
+- Default API URL
+- Suggested models list
+- Whether API key is required
+- How to build the `RestClient`
+- How to create the `AiClient` instance
+
+```
+AiProviderMetadata (interface)
+ ├── AnthropicProviderMetadata
+ │    └── Default URL: https://api.anthropic.com
+ │    └── Models: claude-opus-4-6, claude-sonnet-4-6, claude-haiku-4-5-20251001
+ ├── OpenAiProviderMetadata
+ │    └── Default URL: https://api.openai.com
+ │    └── Models: gpt-5.4, gpt-5.3-codex, gpt-5.1-codex-max, gpt-5-codex
+ ├── OllamaProviderMetadata
+ │    └── Default URL: http://localhost:11434
+ │    └── Models: (user-configured)
+ └── LlamaCppProviderMetadata
+      └── Default URL: http://localhost:8081
+      └── Models: (user-configured)
+```
+
+### AiProviderRegistry
+
+Spring `@Service` that collects all `AiProviderMetadata` beans and provides:
+- List of available provider types
+- Lookup by provider type
+- Maps of default API URLs and suggested models (for UI)
+
+### AiClientFactory
+
+Creates and caches `AiClient` instances per `AiIntegration`:
+- Uses `AiProviderRegistry` to find the correct metadata
+- Delegates to metadata for `RestClient` and `AiClient` creation
+- Caches clients by integration ID + `updatedAt` timestamp
+- Automatically rebuilds clients when configuration changes
+
+### AiClient Hierarchy
 
 ```
 AiClient (interface)
@@ -103,199 +198,250 @@ AiClient (interface)
 ### Provider Differences
 
 | Feature | Anthropic | OpenAI | Ollama | llama.cpp |
-|---|---|---|---|---|
+|---------|-----------|--------|--------|-----------|
 | System prompt | Top-level `system` field | `role: "system"` message | `role: "system"` message | `role: "system"` message |
 | Endpoint | `/v1/messages` | `/v1/chat/completions` | `/api/chat` | `/v1/chat/completions` |
 | Auth | `x-api-key` header | `Bearer` token | None | None |
 | Streaming | Not used | Not used | Disabled (`stream: false`) | Disabled (`stream: false`) |
 | JSON Mode | N/A | N/A | `format: "json"` | GBNF grammar |
 
-### Conditional Bean Creation
+## Repository Provider Architecture
 
-The `AppConfig` uses `@ConditionalOnProperty(name = "ai.provider")` to create exactly one `AiClient` bean based on configuration:
+The bot uses a similar **provider-agnostic abstraction layer** for Git hosting platforms:
 
-```java
-@ConditionalOnProperty(name = "ai.provider", havingValue = "anthropic", matchIfMissing = true)
-public AiClient anthropicAiClient(AiConfigProperties config) { ... }
+### RepositoryProviderMetadata Interface
 
-@ConditionalOnProperty(name = "ai.provider", havingValue = "openai")
-public AiClient openAiClient(AiConfigProperties config) { ... }
+Each Git provider implements `RepositoryProviderMetadata` to define:
+- Provider type identifier (e.g., "gitea", "github")
+- Default web URL
+- How to resolve API URLs from web URLs
+- How to resolve clone URLs
+- How to build the authorization header
+- How to build the `RestClient`
+- How to create the `RepositoryApiClient` instance
 
-@ConditionalOnProperty(name = "ai.provider", havingValue = "ollama")
-public AiClient ollamaClient(AiConfigProperties config) { ... }
+```
+RepositoryProviderMetadata (interface)
+ ├── GiteaProviderMetadata
+ │    └── Default URL: https://gitea.example.com
+ │    └── Auth: token <token>
+ │    └── API: Same base URL with /api/v1 paths
+ └── GitHubProviderMetadata
+      └── Default URL: https://github.com
+      └── Auth: Bearer <token>
+      └── API: api.github.com (public) or <host>/api/v3 (Enterprise)
+```
 
-@ConditionalOnProperty(name = "ai.provider", havingValue = "llamacpp")
-public AiClient llamaCppClient(AiConfigProperties config) { ... }
+### RepositoryProviderRegistry
+
+Spring `@Service` that collects all `RepositoryProviderMetadata` beans and provides:
+- List of available provider types
+- Lookup by provider type
+- Maps of default URLs (for UI)
+
+### RepositoryApiClient Interface
+
+All Git provider clients implement this interface:
+
+```
+RepositoryApiClient (interface)
+ ├── GiteaApiClient
+ └── GitHubApiClient
+```
+
+Methods include:
+- `getPullRequestDiff()` — Fetch PR diff
+- `postComment()` — Post PR comment
+- `postReviewComment()` — Post review with body
+- `addReaction()` — Add emoji reaction
+- `getFileContent()` — Get file content for context
+- `createBranch()` / `commitFile()` / `createPullRequest()` — Agent operations
+
+### Provider Differences
+
+| Feature | Gitea | GitHub |
+|---------|-------|--------|
+| Auth Header | `token <token>` | `Bearer <token>` |
+| API Base | `<url>/api/v1` | `api.github.com` or `<host>/api/v3` |
+| PR Diff | `/repos/{owner}/{repo}/pulls/{pr}/diff` | `/repos/{owner}/{repo}/pulls/{pr}` with `Accept: diff` |
+| Reactions | Text-based (`:eyes:`) | Text-based (`eyes`) |
+
+## Entity Model
+
+```mermaid
+erDiagram
+    AdminUser {
+        Long id PK
+        String username UK
+        String passwordHash
+        Instant createdAt
+    }
+    
+    AiIntegration {
+        Long id PK
+        String name UK
+        String providerType
+        String apiUrl
+        String apiKey
+        String apiVersion
+        String model
+        int maxTokens
+        int maxDiffCharsPerChunk
+        int maxDiffChunks
+        int retryTruncatedChunkChars
+        Instant createdAt
+        Instant updatedAt
+    }
+    
+    GitIntegration {
+        Long id PK
+        String name UK
+        RepositoryType providerType
+        String url
+        String token
+        Instant createdAt
+        Instant updatedAt
+    }
+    
+    Bot {
+        Long id PK
+        String name UK
+        String username
+        String prompt
+        String webhookSecret UK
+        boolean enabled
+        boolean agentEnabled
+        long webhookCallCount
+        Instant lastWebhookAt
+        String lastError
+        Instant lastErrorAt
+        Instant createdAt
+        Instant updatedAt
+    }
+    
+    ReviewSession {
+        Long id PK
+        String repoOwner
+        String repoName
+        int prNumber
+        Instant createdAt
+        Instant updatedAt
+    }
+    
+    ConversationMessage {
+        Long id PK
+        String role
+        String content
+        Instant createdAt
+    }
+    
+    Bot ||--o{ AiIntegration : "uses"
+    Bot ||--o{ GitIntegration : "uses"
+    ReviewSession ||--|{ ConversationMessage : "contains"
 ```
 
 ## Components
 
-### GiteaWebhookController
+### Webhook Controllers
+
+#### GiteaWebhookController
 
 - **Package:** `org.remus.giteabot.gitea`
-- **Endpoint:** `POST /api/webhook?prompt={name}`
+- **Endpoint:** `POST /api/webhook/{webhookSecret}`
 - Receives Gitea webhook payloads for pull request, issue comment, and review comment events
-- Routes events based on payload structure:
-  - **Inline review comments** (`comment.path` set): delegates to `handleInlineComment()`
-  - **Issue/PR comments** (`comment` + `issue` set): delegates to `handleBotCommand()`
-  - **Review submitted** (`action: "reviewed"` + `review` set): delegates to `handleReviewSubmitted()`
-  - **PR lifecycle** (`opened`, `synchronized`, `closed`): delegates to `reviewPullRequest()` or `handlePrClosed()`
-- Filters comments for bot mention (configurable alias) before processing
-- Delegates to `CodeReviewService` asynchronously
+- Looks up Bot by webhook secret
+- Routes events based on payload structure to `BotWebhookService`
 
-### CodeReviewService
+#### GitHubWebhookController
 
-- **Package:** `org.remus.giteabot.review`
-- Orchestrates all review and interaction flows:
-  - **`reviewPullRequest()`**: Initial review or follow-up review on PR update. Fetches diff, sends to the AI provider, posts review comment.
-  - **`handleBotCommand()`**: Responds to bot mentions in regular PR comments. Acknowledges with 👀 reaction, sends conversation to the AI provider, posts response.
-  - **`handleInlineComment()`**: Responds to bot mentions in inline code review comments. Includes file path and diff hunk context. Replies inline at the same file/line, falls back to regular comment.
-  - **`handleReviewSubmitted()`**: Handles review submission events where the individual comments are not in the webhook payload. Fetches reviews and their comments from the Gitea API, filters for bot mentions, and processes each matching comment.
-- Manages session lifecycle (create, reuse, enrich with PR context)
-- Runs asynchronously via `@Async`
+- **Package:** `org.remus.giteabot.github`
+- **Endpoint:** `POST /api/github-webhook/{webhookSecret}`
+- Receives GitHub webhook payloads for pull request, issue comment, and review comment events
+- Looks up Bot by webhook secret
+- Converts GitHub payload format to common event model
+- Routes events to `BotWebhookService`
+
+### BotWebhookService
+
+- **Package:** `org.remus.giteabot.admin`
+- Processes webhook events for a specific bot
+- Gets AI client from `AiClientFactory` using bot's `AiIntegration`
+- Creates Git client using bot's `GitIntegration`
+- Handles:
+  - PR reviews (opened, synchronized)
+  - Bot commands (PR comments with mention)
+  - Inline review comments
+  - Review submitted events
+  - Issue assignments (agent feature)
+
+### AiClientFactory
+
+- **Package:** `org.remus.giteabot.admin`
+- Creates and caches `AiClient` instances
+- Uses `AiProviderRegistry` for provider lookup
+- Rebuilds clients when integration config changes
+
+### AiProviderRegistry
+
+- **Package:** `org.remus.giteabot.ai`
+- Collects all `AiProviderMetadata` implementations via Spring DI
+- Provides provider lookup and metadata access
+
+### AiProviderMetadata Implementations
+
+- **Packages:** `org.remus.giteabot.ai.{anthropic,openai,ollama,llamacpp}`
+- Define provider-specific defaults and client creation logic
+- Registered as `@Component` beans
+
+### RepositoryProviderMetadata Implementations
+
+- **Package:** `org.remus.giteabot.repository`
+- `GiteaProviderMetadata` — Gitea API client factory
+- `GitHubProviderMetadata` — GitHub API client factory
+- Define provider-specific URL resolution and client creation
+- Registered as `@Component` beans
 
 ### SessionService
 
 - **Package:** `org.remus.giteabot.session`
-- Manages the lifecycle of review sessions:
-  - Creates new sessions when PRs are opened
-  - Retrieves existing sessions for PR updates and comment interactions
-  - Stores conversation messages (user/assistant pairs)
-  - Deletes sessions when PRs are closed or merged
-- Converts stored messages to provider-agnostic `AiMessage` format for multi-turn conversations
+- Manages the lifecycle of review sessions per PR
+- Stores conversation messages for context
+- Sessions identified by (repoOwner, repoName, prNumber)
 
-### ReviewSession / ConversationMessage
+### EncryptionService
 
-- **Package:** `org.remus.giteabot.session`
-- JPA entities persisted in the database
-- `ReviewSession` stores: repo owner, repo name, PR number, prompt name, timestamps
-- `ConversationMessage` stores: role (user/assistant), content, timestamp
-- Sessions are uniquely identified by (repoOwner, repoName, prNumber)
-
-### PromptService
-
-- **Package:** `org.remus.giteabot.config`
-- Resolves named prompt definitions from configuration
-- Loads system prompt content from markdown files on disk
-- Falls back to the `default` definition, then to a hardcoded built-in prompt
-- Resolves per-prompt model and Gitea token overrides
-
-### AiClient / AbstractAiClient
-
-- **Package:** `org.remus.giteabot.ai`
-- `AiClient` is the provider-agnostic interface used by `CodeReviewService`
-- `AbstractAiClient` contains shared logic: diff chunking, retry on token limits, message building
-- Provider implementations:
-  - **AnthropicAiClient** (`org.remus.giteabot.ai.anthropic`) — Anthropic Messages API with `system` as a top-level field
-  - **OpenAiClient** (`org.remus.giteabot.ai.openai`) — OpenAI Chat Completions API with `role: "system"` message
-  - **OllamaClient** (`org.remus.giteabot.ai.ollama`) — Ollama `/api/chat` with streaming disabled
-  - **LlamaCppClient** (`org.remus.giteabot.ai.llamacpp`) — llama.cpp `/v1/chat/completions` with GBNF grammar support for structured JSON output
-- Supports system prompt and model overrides per request
-
-### GiteaApiClient
-
-- **Package:** `org.remus.giteabot.gitea`
-- Fetches PR diffs from the Gitea API
-- Posts review comments, regular comments, and inline review comments back to PRs
-- Fetches reviews and review comments for a PR (used when processing submitted reviews)
-- Adds emoji reactions to comments (e.g., 👀 for acknowledgment)
-- Supports per-request token overrides with cached `RestClient` instances
-
-### WebhookPayload Model
-
-- **Package:** `org.remus.giteabot.gitea.model`
-- Deserializes Gitea webhook payloads with support for:
-  - PR events (`pullRequest`, `action`)
-  - Issue comments (`comment`, `issue`)
-  - Inline review comments (`comment.path`, `comment.diffHunk`, `comment.line`, `comment.pullRequestReviewId`)
-  - Review submitted events (`review.id`, `review.type`, `review.content`)
-  - Sender information (`sender`)
-
-### BotConfigProperties
-
-- **Package:** `org.remus.giteabot.config`
-- Configures the bot mention alias (default: `@ai_bot`)
-- Used by both the webhook controller (for filtering) and the code review service (for review comment filtering)
-
-### AppConfig
-
-- **Package:** `org.remus.giteabot.config`
-- Configures `RestClient` bean for Gitea API communication
-- Uses `@ConditionalOnProperty` to create the correct `AiClient` bean based on `ai.provider`
-
-### AiConfigProperties
-
-- **Package:** `org.remus.giteabot.ai`
-- Maps `ai.*` configuration properties for provider selection and per-provider settings
-- Contains nested config classes for Anthropic, OpenAI, and Ollama
-
-### PromptConfigProperties
-
-- **Package:** `org.remus.giteabot.config`
-- Maps `prompts.*` configuration properties to named `PromptConfig` definitions
-- Each definition specifies a markdown file and optional model/token overrides
+- **Package:** `org.remus.giteabot.admin`
+- Encrypts API keys and tokens using AES-256-GCM
+- Uses `APP_ENCRYPTION_KEY` environment variable
 
 ## Request Flows
 
-### PR Review Flow
+### Per-Bot Webhook Flow
 
 ```mermaid
 sequenceDiagram
-    participant Gitea
+    participant Git as Git Provider
     participant Controller as WebhookController
-    participant Review as CodeReviewService
-    participant Session as SessionService
-    participant DB as Database
-    participant Prompt as PromptService
-    participant GiteaAPI as GiteaApiClient
+    participant BotService
+    participant BotWebhook as BotWebhookService
+    participant AiFactory as AiClientFactory
+    participant RepoFactory as RepositoryClientFactory
     participant AI as AiClient
+    participant GitAPI as Git API
 
-    Gitea->>Controller: POST /api/webhook (PR opened)
-    Controller->>Review: reviewPullRequest(payload, promptName)
-    Review->>Prompt: resolveGiteaToken(promptName)
-    Prompt-->>Review: token
-    Review->>GiteaAPI: getPullRequestDiff(owner, repo, pr, token)
-    GiteaAPI->>Gitea: GET .diff
-    Gitea-->>GiteaAPI: diff content
-    GiteaAPI-->>Review: diff
-    Review->>Session: getOrCreateSession(owner, repo, pr)
-    Session->>DB: find or create
-    DB-->>Session: session
-    Session-->>Review: session (new)
-    Review->>Prompt: getSystemPrompt(promptName)
-    Review->>AI: reviewDiff(title, body, diff, prompt, model)
-    AI-->>Review: review text
-    Review->>Session: addMessage("user", summary)
-    Review->>Session: addMessage("assistant", review)
-    Session->>DB: persist messages
-    Review->>GiteaAPI: postReviewComment(owner, repo, pr, review)
-    GiteaAPI->>Gitea: POST review
-```
-
-### PR Update Flow (Synchronized)
-
-```mermaid
-sequenceDiagram
-    participant Gitea
-    participant Controller as WebhookController
-    participant Review as CodeReviewService
-    participant Session as SessionService
-    participant DB as Database
-    participant AI as AiClient
-
-    Gitea->>Controller: POST /api/webhook (PR synchronized)
-    Controller->>Review: reviewPullRequest(payload, promptName)
-    Review->>Session: getOrCreateSession(owner, repo, pr)
-    Session->>DB: find existing
-    DB-->>Session: session (with history)
-    Session-->>Review: session (has messages)
-    Review->>Session: toAiMessages(session)
-    Session-->>Review: conversation history
-    Review->>AI: chat(history, updateMessage, prompt, model)
-    AI-->>Review: updated review
-    Review->>Session: addMessage("user", update)
-    Review->>Session: addMessage("assistant", review)
-    Review->>Gitea: postReviewComment(review)
+    Git->>Controller: POST /api/webhook/{secret}
+    Controller->>BotService: findByWebhookSecret(secret)
+    BotService-->>Controller: Bot
+    Controller->>BotWebhook: handleBotWebhookEvent(bot, payload)
+    BotWebhook->>AiFactory: getClient(bot.aiIntegration)
+    AiFactory-->>BotWebhook: AiClient (cached)
+    BotWebhook->>RepoFactory: getClient(bot.gitIntegration)
+    RepoFactory-->>BotWebhook: RepositoryApiClient
+    BotWebhook->>GitAPI: getPullRequestDiff()
+    GitAPI-->>BotWebhook: diff
+    BotWebhook->>AI: reviewDiff(diff, prompt)
+    AI-->>BotWebhook: review text
+    BotWebhook->>GitAPI: postReviewComment(review)
 ```
 
 ### Bot Command Flow
@@ -303,151 +449,58 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant User
-    participant Gitea
+    participant Git as Git Provider
     participant Controller as WebhookController
-    participant Review as CodeReviewService
+    participant BotWebhook as BotWebhookService
     participant Session as SessionService
-    participant DB as Database
-    participant GiteaAPI as GiteaApiClient
+    participant Factory as AiClientFactory
     participant AI as AiClient
+    participant GitAPI as Git API
 
-    User->>Gitea: Comment: "@ai_bot explain this"
-    Gitea->>Controller: POST /api/webhook (issue_comment)
-    Controller->>Review: handleBotCommand(payload)
-    Review->>GiteaAPI: addReaction(commentId, "eyes")
-    GiteaAPI->>Gitea: POST 👀 reaction
-    Review->>Session: getOrCreateSession(owner, repo, pr)
-    Session->>DB: find existing
-    DB-->>Session: session (with history)
-    Review->>Session: toAiMessages(session)
-    Session-->>Review: conversation history
-    Review->>AI: chat(history, comment, prompt, model)
-    AI-->>Review: response
-    Review->>Session: addMessage("user", comment)
-    Review->>Session: addMessage("assistant", response)
-    Review->>GiteaAPI: postComment(owner, repo, pr, response)
-    GiteaAPI->>Gitea: POST comment
-```
-
-### Inline Review Comment Flow
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Gitea
-    participant Controller as WebhookController
-    participant Review as CodeReviewService
-    participant Session as SessionService
-    participant GiteaAPI as GiteaApiClient
-    participant AI as AiClient
-
-    User->>Gitea: Inline comment on code: "@ai_bot explain this"
-    Gitea->>Controller: POST /api/webhook (comment with path)
-    Controller->>Review: handleInlineComment(payload)
-    Review->>GiteaAPI: addReaction(commentId, "eyes")
-    Review->>Session: getOrCreateSession(owner, repo, pr)
-    Review->>AI: chat(history, fileContext + diffHunk + question)
-    AI-->>Review: response
-    Review->>GiteaAPI: postInlineReviewComment(file, line, response)
-    Note right of GiteaAPI: Falls back to postComment() on error
-```
-
-### Review Submitted Flow
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Gitea
-    participant Controller as WebhookController
-    participant Review as CodeReviewService
-    participant GiteaAPI as GiteaApiClient
-    participant AI as AiClient
-
-    User->>Gitea: Submit review with inline comments
-    Gitea->>Controller: POST /api/webhook (action: "reviewed")
-    Controller->>Review: handleReviewSubmitted(payload)
-    Review->>GiteaAPI: getReviews(owner, repo, pr)
-    GiteaAPI-->>Review: list of reviews
-    Review->>Review: find latest review (highest ID)
-    Review->>GiteaAPI: getReviewComments(owner, repo, pr, reviewId)
-    GiteaAPI-->>Review: list of comments
-    Review->>Review: filter for bot mentions
-    loop For each bot-mentioning comment
-        Review->>GiteaAPI: addReaction(commentId, "eyes")
-        Review->>AI: chat(history, fileContext + question)
-        AI-->>Review: response
-        Review->>GiteaAPI: postInlineReviewComment(file, line, response)
-    end
-```
-
-### PR Close/Merge Flow
-
-```mermaid
-sequenceDiagram
-    participant Gitea
-    participant Controller as WebhookController
-    participant Review as CodeReviewService
-    participant Session as SessionService
-    participant DB as Database
-
-    Gitea->>Controller: POST /api/webhook (PR closed)
-    Controller->>Review: handlePrClosed(payload)
-    Review->>Session: deleteSession(owner, repo, pr)
-    Session->>DB: DELETE session + messages
-```
-
-## Diff Chunking Flow
-
-```mermaid
-flowchart TD
-    A[Receive full diff] --> B{Diff size > max chunk chars?}
-    B -- No --> C[Send as single chunk]
-    B -- Yes --> D[Split at newline boundaries]
-    D --> E{More chunks && under limit?}
-    E -- Yes --> D
-    E -- No --> F[Review each chunk]
-    F --> G{API returns 'prompt too long'?}
-    G -- No --> H[Collect review]
-    G -- Yes --> I[Truncate and retry]
-    I --> H
-    H --> J[Combine all chunk reviews]
-```
-
-## Prompt Resolution Flow
-
-```mermaid
-flowchart TD
-    A["Webhook arrives with ?prompt=name"] --> B{name provided?}
-    B -- No --> C[Look up 'default' definition]
-    B -- Yes --> D[Look up named definition]
-    D --> E{Definition found?}
-    E -- No --> C
-    E -- Yes --> F[Load markdown file from prompts.dir]
-    C --> G{Default definition exists?}
-    G -- No --> H[Use hardcoded built-in prompt]
-    G -- Yes --> F
-    F --> I{File readable?}
-    I -- No --> H
-    I -- Yes --> J[Return file content as system prompt]
+    User->>Git: Comment: "@ai_bot explain this"
+    Git->>Controller: POST /api/webhook/{secret}
+    Controller->>BotWebhook: handleBotCommand(bot, payload)
+    BotWebhook->>GitAPI: addReaction(commentId, "eyes")
+    BotWebhook->>Session: getOrCreateSession(owner, repo, pr)
+    Session-->>BotWebhook: session (with history)
+    BotWebhook->>Factory: getClient(bot.aiIntegration)
+    Factory-->>BotWebhook: AiClient
+    BotWebhook->>AI: chat(history, comment, prompt)
+    AI-->>BotWebhook: response
+    BotWebhook->>Session: addMessage("user", comment)
+    BotWebhook->>Session: addMessage("assistant", response)
+    BotWebhook->>GitAPI: postComment(response)
 ```
 
 ## Webhook Routing Flow
 
 ```mermaid
 flowchart TD
-    A["Webhook received"] --> B{comment with path?}
-    B -- Yes --> C["handleInlineReviewComment()<br/>Bot mention in code-level comment"]
-    B -- No --> D{comment + issue?}
-    D -- Yes --> E["handleCommentEvent()<br/>Bot mention in PR comment"]
-    D -- No --> F{pullRequest present?}
-    F -- No --> G["ignored"]
-    F -- Yes --> H{action = reviewed?}
-    H -- Yes --> I["handleReviewSubmittedEvent()<br/>Fetch & process review comments"]
-    H -- No --> J{action = closed?}
-    J -- Yes --> K["handlePrClosed()"]
-    J -- No --> L{action = opened/synchronized?}
-    L -- Yes --> M["reviewPullRequest()"]
-    L -- No --> G
+    A["Webhook received at /api/webhook/{secret}"] --> B{Bot found?}
+    B -- No --> Z["404 Not Found"]
+    B -- Yes --> C{Bot enabled?}
+    C -- No --> Y["200 'bot disabled'"]
+    C -- Yes --> D{Is bot's own action?}
+    D -- Yes --> X["200 'ignored'"]
+    D -- No --> E{comment with path?}
+    E -- Yes --> F["handleInlineComment()"]
+    E -- No --> G{comment + issue?}
+    G -- Yes --> H{Bot mentioned?}
+    H -- No --> X
+    H -- Yes --> I{Is PR?}
+    I -- Yes --> J["handleBotCommand()"]
+    I -- No --> K["handleIssueComment()"]
+    G -- No --> L{Issue assigned to bot?}
+    L -- Yes --> M["handleIssueAssigned()"]
+    L -- No --> N{pullRequest present?}
+    N -- No --> X
+    N -- Yes --> O{action = reviewed?}
+    O -- Yes --> P["handleReviewSubmitted()"]
+    O -- No --> Q{action = closed?}
+    Q -- Yes --> R["handlePrClosed()"]
+    Q -- No --> S{action = opened/synchronized?}
+    S -- Yes --> T["reviewPullRequest()"]
+    S -- No --> X
 ```
 
 ## Docker Deployment
@@ -457,10 +510,10 @@ graph LR
     subgraph "Docker Compose"
         subgraph "App Container"
             App["app.jar<br/>(Spring Boot)"]
-            Prompts["/app/prompts/<br/>Mounted volume"]
+            Prompts["/app/prompts/<br/>Prompt templates"]
         end
         subgraph "DB Container"
-            Postgres["PostgreSQL 17<br/>(Session storage)"]
+            Postgres["PostgreSQL 17<br/>(Config & Sessions)"]
             PGData["pgdata volume"]
         end
     end
@@ -471,9 +524,8 @@ graph LR
     Postgres -- stores --> PGData
 ```
 
-- The `prompts/` directory is baked into the image with a default prompt
-- At runtime, the host's `./prompts/` directory is bind-mounted as read-only
-- Prompt files can be edited on the host without rebuilding the image
-- PostgreSQL persists review sessions and conversation history
+- All configuration (AI integrations, Git integrations, bots) is stored in the database
+- The `prompts/` directory contains prompt templates loaded at runtime
+- PostgreSQL persists configuration and review sessions
 - Session data survives container restarts via the `pgdata` volume
 

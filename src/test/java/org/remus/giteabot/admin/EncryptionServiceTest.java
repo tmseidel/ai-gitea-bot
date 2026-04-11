@@ -30,13 +30,18 @@ class EncryptionServiceTest {
     }
 
     @Test
-    void encrypt_blankInput_returnsNull() {
-        assertNull(encryptionService.encrypt("   "));
+    void encrypt_blankInput_returnsBlank() {
+        assertEquals("   ", encryptionService.encrypt("   "));
     }
 
     @Test
     void decrypt_nullInput_returnsNull() {
         assertNull(encryptionService.decrypt(null));
+    }
+
+    @Test
+    void decrypt_blankInput_returnsBlank() {
+        assertEquals("   ", encryptionService.decrypt("   "));
     }
 
     @Test
@@ -58,5 +63,45 @@ class EncryptionServiceTest {
         // Both should still decrypt to the same value
         assertEquals(input, encryptionService.decrypt(encrypted1));
         assertEquals(input, encryptionService.decrypt(encrypted2));
+    }
+
+    @Test
+    void noEncryptionKey_encrypt_returnsPlainText() {
+        EncryptionService noKeyService = new EncryptionService(null);
+        String input = "plain-api-key";
+
+        String result = noKeyService.encrypt(input);
+
+        assertEquals(input, result);
+        assertFalse(noKeyService.isEncryptionEnabled());
+    }
+
+    @Test
+    void noEncryptionKey_decrypt_returnsPlainText() {
+        EncryptionService noKeyService = new EncryptionService(null);
+        String input = "plain-api-key";
+
+        String result = noKeyService.decrypt(input);
+
+        assertEquals(input, result);
+    }
+
+    @Test
+    void noEncryptionKey_decrypt_legacyEncPrefix_stripsPrefix() {
+        EncryptionService noKeyService = new EncryptionService(null);
+        String input = "ENC:some-encrypted-value";
+
+        String result = noKeyService.decrypt(input);
+
+        assertEquals("some-encrypted-value", result);
+    }
+
+    @Test
+    void decrypt_invalidBase64_returnsOriginal() {
+        String notBase64 = "this-is-not-base64!@#$%";
+
+        String result = encryptionService.decrypt(notBase64);
+
+        assertEquals(notBase64, result);
     }
 }

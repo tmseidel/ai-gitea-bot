@@ -1,16 +1,16 @@
 # Using llama.cpp
 
-This guide covers running the AI Gitea Bot with [llama.cpp](https://github.com/ggerganov/llama.cpp) for local, private AI-powered code reviews using GGUF model files — no external API keys required.
+This guide covers running the AI Code Review Bot with [llama.cpp](https://github.com/ggerganov/llama.cpp) for local, private AI-powered code reviews using GGUF model files — no external API keys required.
 
 ## Overview
 
-llama.cpp is a high-performance C++ inference engine for LLMs that supports a wide range of quantized model formats (GGUF). The bot connects to llama.cpp's OpenAI-compatible `/v1/chat/completions` endpoint, sending diffs and conversation history just like with cloud providers.
+llama.cpp is a high-performance C++ inference engine for LLMs that supports a wide range of quantized model formats (GGUF). The bot connects to llama.cpp's native `/completion` endpoint, which provides full support for GBNF grammar constraints.
 
 ### Key Advantages over Ollama
 
 | Feature | llama.cpp | Ollama |
 |---------|-----------|--------|
-| **GBNF Grammar** | ✅ Native support for constrained output | ❌ JSON mode only |
+| **GBNF Grammar** | ✅ Full native support | ❌ JSON mode only |
 | **Model Format** | GGUF files directly | Ollama-specific format |
 | **Agent Reliability** | ✅ Grammar-constrained JSON | ⚠️ Often fails |
 | **Memory Efficiency** | Highly optimized | Good |
@@ -53,6 +53,7 @@ docker compose up -d
 | `AI_MAX_TOKENS` | `4096` | Max tokens per response |
 | `AI_MAX_DIFF_CHARS_PER_CHUNK` | `120000` | Max characters per diff chunk |
 | `AI_MAX_DIFF_CHUNKS` | `8` | Maximum number of chunks to review |
+| `AGENT_MAX_FILE_CONTENT_CHARS` | `100000` | Max chars of file content in agent prompts (use ~20000 for 16k context) |
 
 ### Application Properties
 
@@ -63,6 +64,9 @@ ai.llamacpp.api-url=http://localhost:8081
 ai.max-tokens=4096
 ai.max-diff-chars-per-chunk=30000
 ai.max-diff-chunks=4
+
+# For agent feature with 16k context, limit file content
+agent.max-file-content-chars=20000
 ```
 
 ## Recommended Models for Coding
@@ -232,10 +236,12 @@ Adjust `--ctx-size` based on your needs and available memory:
 
 | Context Size | RAM Required (7B Q4) | Use Case |
 |--------------|----------------------|----------|
-| 2048 | ~6 GB | Small diffs |
-| 4096 | ~8 GB | **Recommended** |
-| 8192 | ~12 GB | Larger diffs |
-| 16384 | ~20 GB | Very large context |
+| 4096 | ~8 GB | Small diffs only |
+| 8192 | ~10 GB | Medium diffs |
+| 16384 | ~14 GB | **Recommended for agent** |
+| 32768 | ~22 GB | Very large context |
+
+**Note:** The agent feature requires larger context sizes (16384+) to handle issue descriptions, file contents, and structured JSON output.
 
 ### Batch Size
 

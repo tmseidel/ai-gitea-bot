@@ -191,11 +191,17 @@ public class ToolExecutionService {
         }
     }
 
-    private String buildCloneUrl(String owner, String repo, String giteaUrl, String giteaToken) {
+    private String buildCloneUrl(String owner, String repo, String cloneBaseUrl, String token) {
         // Preserve the original protocol (http or https)
-        String protocol = giteaUrl.startsWith("https://") ? "https" : "http";
-        String baseUrl = giteaUrl.replaceFirst("https?://", "");
-        return String.format("%s://%s@%s/%s/%s.git", protocol, giteaToken, baseUrl, owner, repo);
+        String protocol = cloneBaseUrl.startsWith("https://") ? "https" : "http";
+        String baseUrl = cloneBaseUrl.replaceFirst("https?://", "");
+
+        // Remove trailing slash if present
+        if (baseUrl.endsWith("/")) {
+            baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
+        }
+
+        return String.format("%s://%s@%s/%s/%s.git", protocol, token, baseUrl, owner, repo);
     }
 
     private CommandResult runCommand(File workDir, String[] command, int timeoutSeconds) {

@@ -1,6 +1,6 @@
-# Contributing to Anthropic Gitea Bot
+# Contributing to AI Code Review Bot
 
-We welcome contributions to the Anthropic Gitea Bot! This document provides guidelines and instructions for contributing.
+We welcome contributions to the AI Code Review Bot! This document provides guidelines and instructions for contributing.
 
 ## Getting Started
 
@@ -8,8 +8,8 @@ We welcome contributions to the Anthropic Gitea Bot! This document provides guid
 
 - Java 21 or later
 - Maven 3.9+
-- A Gitea instance (for integration testing)
-- An Anthropic API key (for end-to-end testing)
+- A Git hosting platform for integration testing (Gitea or GitHub)
+- An AI provider API key (Anthropic, OpenAI) or local setup (Ollama, llama.cpp)
 
 ### Setting Up the Development Environment
 
@@ -96,9 +96,13 @@ See [Architecture Documentation](doc/ARCHITECTURE.md) for detailed component des
 
 ```
 src/main/java/org/remus/giteabot/
+├── admin/        # Admin controllers, services, entities (Bots, Integrations)
+├── ai/           # AI provider abstraction layer and implementations
 ├── config/       # Configuration classes and prompt service
 ├── gitea/        # Gitea webhook controller, API client, and models
-├── anthropic/    # Anthropic API client and models
+├── github/       # GitHub webhook controller, API client, and models
+├── repository/   # Repository provider abstraction and metadata
+├── agent/        # Issue implementation agent
 ├── review/       # Code review orchestration
 └── session/      # Session management and persistence
 ```

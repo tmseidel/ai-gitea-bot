@@ -1,6 +1,6 @@
 # Using Ollama
 
-This guide covers running the AI Gitea Bot with [Ollama](https://ollama.com) for fully local, private AI-powered code reviews — no external API keys required.
+This guide covers running the AI Code Review Bot with [Ollama](https://ollama.com) for fully local, private AI-powered code reviews — no external API keys required.
 
 ## ⚠️ Important: Agent Compatibility
 

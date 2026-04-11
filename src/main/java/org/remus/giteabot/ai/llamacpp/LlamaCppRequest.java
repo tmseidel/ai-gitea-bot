@@ -8,20 +8,26 @@ import lombok.Data;
 import java.util.List;
 
 /**
- * Request model for llama.cpp server's OpenAI-compatible chat completions endpoint.
+ * Request model for llama.cpp server's native /completion endpoint.
  * Supports the grammar field for structured JSON output constraints.
+ * See: https://github.com/ggerganov/llama.cpp/blob/master/examples/server/README.md
  */
 @Data
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class LlamaCppRequest {
 
-    private String model;
+    /**
+     * The prompt to generate completion for.
+     * For chat, this should be formatted with the model's chat template.
+     */
+    private String prompt;
 
-    private List<Message> messages;
-
-    @JsonProperty("max_tokens")
-    private Integer maxTokens;
+    /**
+     * Maximum number of tokens to generate.
+     */
+    @JsonProperty("n_predict")
+    private Integer nPredict;
 
     /**
      * Temperature for response generation (0.0 = deterministic, higher = more creative).
@@ -29,18 +35,46 @@ public class LlamaCppRequest {
     private Double temperature;
 
     /**
+     * Top-p sampling (nucleus sampling).
+     */
+    @JsonProperty("top_p")
+    private Double topP;
+
+    /**
+     * Top-k sampling.
+     */
+    @JsonProperty("top_k")
+    private Integer topK;
+
+    /**
+     * Repetition penalty to prevent the model from repeating tokens.
+     * Values > 1.0 discourage repetition. Recommended: 1.1 - 1.2
+     */
+    @JsonProperty("repeat_penalty")
+    private Double repeatPenalty;
+
+    /**
+     * Frequency penalty - reduces likelihood of repeated tokens.
+     */
+    @JsonProperty("frequency_penalty")
+    private Double frequencyPenalty;
+
+    /**
+     * Presence penalty - reduces likelihood of any token that has appeared.
+     */
+    @JsonProperty("presence_penalty")
+    private Double presencePenalty;
+
+    /**
      * GBNF grammar string for constraining output format.
      * See: https://github.com/ggerganov/llama.cpp/blob/master/grammars/README.md
-     * When set, the model output will be constrained to match this grammar.
      */
     private String grammar;
 
     /**
-     * Alternative to grammar: JSON schema for structured output.
-     * llama.cpp can convert this to a grammar internally.
+     * Stop sequences - generation stops when any of these strings is encountered.
      */
-    @JsonProperty("json_schema")
-    private Object jsonSchema;
+    private List<String> stop;
 
     /**
      * Whether to stream the response. We always set this to false.
@@ -48,16 +82,9 @@ public class LlamaCppRequest {
     private Boolean stream;
 
     /**
-     * Stop sequences - generation stops when any of these strings is encountered.
-     * Used to prevent models from generating chat template tokens.
+     * Enable caching of the prompt for faster subsequent requests.
      */
-    private List<String> stop;
-
-    @Data
-    @Builder
-    public static class Message {
-        private String role;
-        private String content;
-    }
+    @JsonProperty("cache_prompt")
+    private Boolean cachePrompt;
 }
 

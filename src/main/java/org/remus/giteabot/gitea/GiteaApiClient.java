@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.remus.giteabot.gitea.model.GiteaReview;
 import org.remus.giteabot.gitea.model.GiteaReviewComment;
 import org.remus.giteabot.repository.RepositoryApiClient;
+import org.remus.giteabot.repository.model.RepositoryCredentials;
 import org.remus.giteabot.repository.model.Review;
 import org.remus.giteabot.repository.model.ReviewComment;
 import org.springframework.core.ParameterizedTypeReference;
@@ -21,26 +22,22 @@ import java.util.Map;
 public class GiteaApiClient implements RepositoryApiClient {
 
     private final RestClient giteaRestClient;
-    private final String giteaUrl;
-    private final String token;
+    private final RepositoryCredentials credentials;
 
     /**
-     * Creates a GiteaApiClient with the given RestClient, Gitea URL, and token.
+     * Creates a GiteaApiClient with the given RestClient and credentials.
+     *
+     * @param restClient  pre-configured RestClient pointing at the Gitea API base URL
+     * @param credentials the repository credentials (base URL, clone URL, token)
      */
-    public GiteaApiClient(RestClient restClient, String giteaUrl, String token) {
+    public GiteaApiClient(RestClient restClient, RepositoryCredentials credentials) {
         this.giteaRestClient = restClient;
-        this.giteaUrl = giteaUrl;
-        this.token = token;
+        this.credentials = credentials;
     }
 
     @Override
-    public String getBaseUrl() {
-        return giteaUrl;
-    }
-
-    @Override
-    public String getToken() {
-        return token;
+    public RepositoryCredentials getCredentials() {
+        return credentials;
     }
 
     @Override
@@ -124,7 +121,6 @@ public class GiteaApiClient implements RepositoryApiClient {
     // ---- Repository operations for the issue implementation agent ----
 
     @Override
-    @SuppressWarnings("unchecked")
     public String getDefaultBranch(String owner, String repo) {
         log.info("Fetching default branch for {}/{}", owner, repo);
         Map<String, Object> repoInfo = giteaRestClient.get()
@@ -152,7 +148,6 @@ public class GiteaApiClient implements RepositoryApiClient {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public String getFileContent(String owner, String repo, String path, String ref) {
         log.info("Fetching file content for {}/{}/{} at ref={}", owner, repo, path, ref);
         Map<String, Object> result = giteaRestClient.get()
@@ -167,7 +162,6 @@ public class GiteaApiClient implements RepositoryApiClient {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public String getFileSha(String owner, String repo, String path, String ref) {
         log.info("Fetching file SHA for {}/{}/{} at ref={}", owner, repo, path, ref);
         Map<String, Object> result = giteaRestClient.get()
@@ -226,7 +220,6 @@ public class GiteaApiClient implements RepositoryApiClient {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public Long createPullRequest(String owner, String repo, String title, String body,
                                   String head, String base) {
         log.info("Creating pull request '{}' in {}/{} from {} to {}", title, owner, repo, head, base);

@@ -210,6 +210,8 @@ class WebhookIntegrationTest {
         ai.setName("AI Close Test");
         ai.setProviderType("anthropic");
         ai.setApiUrl("http://localhost:" + anthropicPort);
+        ai.setApiKey("test-api-key");
+        ai.setApiVersion("2023-06-01");
         ai.setModel("claude-sonnet-4-20250514");
         ai.setMaxTokens(1024);
         ai.setMaxDiffCharsPerChunk(50000);

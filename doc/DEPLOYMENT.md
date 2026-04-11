@@ -1,67 +1,51 @@
 # Deployment
 
-This guide covers deploying the AI Gitea Bot using Docker Compose.
+This guide covers deploying the AI Code Review Bot using Docker Compose.
 
 ## Prerequisites
 
 - **Docker** and **Docker Compose** installed
-- A **Gitea instance** with the bot user configured (see [Gitea Setup](GITEA_SETUP.md))
-- An API key for your chosen AI provider (Anthropic, OpenAI) or a local Ollama instance
+- A **Git hosting platform** configured:
+  - Gitea: See [Gitea Setup](GITEA_SETUP.md)
+  - GitHub / GitHub Enterprise: See [GitHub Setup](GITHUB_SETUP.md)
+- API credentials for your chosen AI provider (Anthropic, OpenAI) or a local Ollama/llama.cpp instance
 
 ## Quick Start
 
-### With Anthropic (default)
-
 ```bash
-export GITEA_URL=https://your-gitea-instance.com
-export GITEA_TOKEN=your-gitea-api-token
-export AI_ANTHROPIC_API_KEY=your-anthropic-api-key
-
 docker compose up --build -d
 ```
-
-### With OpenAI
-
-```bash
-export GITEA_URL=https://your-gitea-instance.com
-export GITEA_TOKEN=your-gitea-api-token
-export AI_PROVIDER=openai
-export AI_MODEL=gpt-4o
-export AI_OPENAI_API_KEY=your-openai-api-key
-
-docker compose up --build -d
-```
-
-### With Ollama (local LLM)
-
-See [Using Ollama](OLLAMA.md) for a dedicated guide.
 
 This starts:
 - The bot application on port **8080**
-- A **PostgreSQL 17** database for session persistence
+- A **PostgreSQL 17** database for configuration and session persistence
+
+Then:
+1. Navigate to `http://localhost:8080` to complete initial setup
+2. Create your admin account
+3. Configure AI and Git integrations via the web UI
+4. Create a bot and configure webhooks in your Git provider (Gitea or GitHub)
+
+See the [User Guide](USER_GUIDE.md) for detailed instructions.
 
 ## Docker Compose Template
 
-Save the following as `docker-compose.yml` and adjust the values to your environment:
+Save the following as `docker-compose.yml`:
 
 ```yaml
 services:
   app:
-    image: ai-gitea-bot:latest
+    image: ghcr.io/your-org/ai-gitea-bot:latest
+    # Or build locally:
+    # build: .
     ports:
       - "8080:8080"
     environment:
       SPRING_PROFILES_ACTIVE: docker
-      GITEA_URL: https://your-gitea-instance.com
-      GITEA_TOKEN: your-gitea-api-token
-      AI_PROVIDER: anthropic           # "anthropic", "openai", or "ollama"
-      AI_MODEL: claude-sonnet-4-20250514
-      AI_MAX_TOKENS: 4096
-      AI_ANTHROPIC_API_KEY: your-api-key
-      BOT_USERNAME: "ai_bot"
       DATABASE_URL: jdbc:postgresql://db:5432/giteabot
       DATABASE_USERNAME: giteabot
       DATABASE_PASSWORD: change-me
+      APP_ENCRYPTION_KEY: your-secure-encryption-key-here
     volumes:
       - ./prompts:/app/prompts:ro
     depends_on:
@@ -95,99 +79,59 @@ volumes:
 ### Required
 
 | Variable | Description |
-|---|---|
-| `GITEA_URL` | URL of your Gitea instance (e.g., `https://gitea.example.com`) |
-| `GITEA_TOKEN` | API token for the bot's Gitea user account |
+|----------|-------------|
+| `APP_ENCRYPTION_KEY` | Encryption key for sensitive data (API keys, tokens). Set to a fixed value for persistence across restarts. If not set, a random key is generated (data won't survive restarts). |
+| `DATABASE_URL` | JDBC connection URL (default: `jdbc:postgresql://db:5432/giteabot`) |
+| `DATABASE_USERNAME` | Database username (default: `giteabot`) |
+| `DATABASE_PASSWORD` | Database password |
 
-### AI Provider Selection
+### Agent Configuration (Optional)
 
-| Variable | Default | Description |
-|---|---|---|
-| `AI_PROVIDER` | `anthropic` | AI provider to use: `anthropic`, `openai`, or `ollama` |
-| `AI_MODEL` | `claude-sonnet-4-20250514` | Default model name for the selected provider |
-| `AI_MAX_TOKENS` | `4096` | Max tokens per response |
-| `AI_MAX_DIFF_CHARS_PER_CHUNK` | `120000` | Max characters per diff chunk |
-| `AI_MAX_DIFF_CHUNKS` | `8` | Maximum number of chunks to review |
-| `AI_RETRY_TRUNCATED_CHUNK_CHARS` | `60000` | Truncated chunk size on retry |
-
-### Anthropic-Specific
+The issue implementation agent is **enabled per-bot** via the web UI. These environment variables configure global agent behavior:
 
 | Variable | Default | Description |
-|---|---|---|
-| `AI_ANTHROPIC_API_URL` | `https://api.anthropic.com` | Anthropic API base URL |
-| `AI_ANTHROPIC_API_KEY` | | Anthropic API key |
-| `AI_ANTHROPIC_API_VERSION` | `2023-06-01` | Anthropic API version |
-
-### OpenAI-Specific
-
-| Variable | Default | Description |
-|---|---|---|
-| `AI_OPENAI_API_URL` | `https://api.openai.com` | OpenAI API base URL (also works with compatible APIs) |
-| `AI_OPENAI_API_KEY` | | OpenAI API key |
-
-### Ollama-Specific
-
-| Variable | Default | Description |
-|---|---|---|
-| `AI_OLLAMA_API_URL` | `http://localhost:11434` | Ollama API base URL |
-
-### Optional — Bot
-
-| Variable | Default | Description |
-|---|---|---|
-| `BOT_USERNAME` | `ai_bot` | Gitea username of the bot account (mention alias is derived as `@ai_bot`) |
-
-### Optional — Agent
-
-The issue implementation agent is **enabled by default**. See [Agent Documentation](AGENT.md) for full details.
-
-| Variable | Default | Description |
-|---|---|---|
-| `AGENT_ENABLED` | `true` | Enable/disable the agent feature |
+|----------|---------|-------------|
 | `AGENT_MAX_FILES` | `20` | Maximum files the agent can modify per issue |
-| `AGENT_MAX_TOKENS` | `32768` | Maximum tokens for AI responses |
-| `AGENT_BRANCH_PREFIX` | `ai-agent/` | Prefix for created branches |
-| `AGENT_ALLOWED_REPOS` | *(empty = all)* | Comma-separated list of `owner/repo` where agent is active |
-| `AGENT_VALIDATION_ENABLED` | `true` | Enable validation before commit |
+| `AGENT_MAX_TOKENS` | `32768` | Maximum tokens for AI responses in agent mode |
+| `AGENT_BRANCH_PREFIX` | `ai-agent/` | Prefix for branches created by the agent |
+| `AGENT_VALIDATION_ENABLED` | `true` | Enable syntax validation before commit |
 | `AGENT_VALIDATION_MAX_RETRIES` | `3` | Max iterations for error correction |
 
-### Optional — Database
+See [Agent Documentation](AGENT.md) for full details.
 
-| Variable | Default | Description |
-|---|---|---|
-| `DATABASE_URL` | `jdbc:postgresql://db:5432/giteabot` | JDBC connection URL |
-| `DATABASE_USERNAME` | `giteabot` | Database username |
-| `DATABASE_PASSWORD` | `giteabot` | Database password |
+## Configuration via Web UI
 
-## Configurable Prompts
+All AI provider and Git configuration is managed through the web interface:
 
-System prompts sent to the AI are customizable via markdown files. Place them in the `prompts/` directory, which is mounted as a read-only volume:
+1. **AI Integrations**: Create connections to AI providers (Anthropic, OpenAI, Ollama, llama.cpp)
+   - Provider-specific default API URLs are pre-filled
+   - Suggested models are available via dropdown
+   - API keys are encrypted at rest
+
+2. **Git Integrations**: Create connections to Git hosting platforms
+   - **Gitea**: Self-hosted Gitea instances — see [Gitea Setup](GITEA_SETUP.md)
+   - **GitHub**: github.com or GitHub Enterprise Server — see [GitHub Setup](GITHUB_SETUP.md)
+   - Tokens are encrypted at rest
+
+3. **Bots**: Create bots that combine an AI integration with a Git integration
+   - Each bot gets a unique webhook URL
+   - Configure system prompts per bot
+   - Enable/disable agent feature per bot
+
+## Prompt Templates
+
+System prompt templates are loaded from the `prompts/` directory:
 
 ```yaml
 volumes:
   - ./prompts:/app/prompts:ro
 ```
 
-Prompt files can be edited on the host without rebuilding the Docker image.
+The bot includes two built-in templates:
+- `default.md` — Concise code review (best for cloud AI)
+- `local-llm.md` — Detailed, structured review (best for local models)
 
-### Defining Prompt Profiles
-
-Add properties to your configuration to define named prompts:
-
-```properties
-# Default prompt — used when no ?prompt= parameter is provided
-prompts.definitions.default.file=default.md
-
-# Security-focused review with a more capable model
-prompts.definitions.security.file=security-review.md
-prompts.definitions.security.model=claude-opus-4-20250514
-
-# Team-specific review using a separate Gitea service account
-prompts.definitions.team-a.file=team-a-review.md
-prompts.definitions.team-a.gitea-token=team-a-specific-token
-```
-
-Select the prompt via the webhook URL: `http://<bot-host>:8080/api/webhook?prompt=security`
+These are selectable in the bot configuration form. You can also add custom prompts by placing `.md` files in the prompts directory.
 
 ## Dockerfile Details
 
@@ -207,7 +151,12 @@ Key features:
 - PostgreSQL 17 (Alpine) is included in the Docker Compose setup
 - Data is persisted in the `pgdata` Docker volume
 - Schema is automatically managed by Hibernate (`ddl-auto=update`)
-- The database stores review sessions and conversation history so the bot maintains context across PR updates
+- The database stores:
+  - Admin users
+  - AI integrations (with encrypted API keys)
+  - Git integrations (with encrypted tokens)
+  - Bots
+  - Review sessions and conversation history
 
 ## Health Check
 
@@ -223,6 +172,5 @@ Use this for load balancer health checks or container orchestration.
 
 ```bash
 docker compose down        # Stop containers (data preserved in pgdata volume)
-docker compose down -v     # Stop and remove volumes (deletes all session data)
+docker compose down -v     # Stop and remove volumes (deletes all data)
 ```
-

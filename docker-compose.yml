@@ -7,27 +7,11 @@ services:
       - "8080:8080"
     environment:
       SPRING_PROFILES_ACTIVE: docker
-      GITEA_URL: ${GITEA_URL:?Set GITEA_URL}
-      GITEA_TOKEN: ${GITEA_TOKEN:?Set GITEA_TOKEN}
-      AI_PROVIDER: ${AI_PROVIDER:-anthropic}
-      AI_MODEL: ${AI_MODEL:-claude-sonnet-4-20250514}
-      AI_MAX_TOKENS: ${AI_MAX_TOKENS:-4096}
-      AI_MAX_DIFF_CHARS_PER_CHUNK: ${AI_MAX_DIFF_CHARS_PER_CHUNK:-120000}
-      AI_MAX_DIFF_CHUNKS: ${AI_MAX_DIFF_CHUNKS:-8}
-      AI_RETRY_TRUNCATED_CHUNK_CHARS: ${AI_RETRY_TRUNCATED_CHUNK_CHARS:-60000}
-      AI_ANTHROPIC_API_URL: ${AI_ANTHROPIC_API_URL:-https://api.anthropic.com}
-      AI_ANTHROPIC_API_KEY: ${AI_ANTHROPIC_API_KEY:-}
-      AI_ANTHROPIC_API_VERSION: ${AI_ANTHROPIC_API_VERSION:-2023-06-01}
-      AI_OPENAI_API_URL: ${AI_OPENAI_API_URL:-https://api.openai.com}
-      AI_OPENAI_API_KEY: ${AI_OPENAI_API_KEY:-}
-      AI_OLLAMA_API_URL: ${AI_OLLAMA_API_URL:-http://localhost:11434}
-      PROMPTS_DIR: /app/prompts
-      BOT_USERNAME: ${BOT_USERNAME:-ai_bot}
       DATABASE_URL: jdbc:postgresql://db:5432/giteabot
       DATABASE_USERNAME: ${DATABASE_USERNAME:-giteabot}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:-giteabot}
-    volumes:
-      - ./prompts:/app/prompts:ro
+      # Encryption key for API keys stored in database (optional, but recommended for production)
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-}
     depends_on:
       db:
         condition: service_healthy

@@ -3,7 +3,9 @@ package org.remus.giteabot.repository.model;
 /**
  * Provider-agnostic interface for a pull request review.
  * Implementations exist for Gitea ({@link org.remus.giteabot.gitea.model.GiteaReview}),
- * with future support for GitLab, Bitbucket, etc.
+ * GitHub ({@link org.remus.giteabot.github.model.GitHubReview}), and Bitbucket Cloud
+ * ({@link org.remus.giteabot.bitbucket.model.BitbucketReview}),
+ * with future support for GitLab, etc.
  */
 public interface Review {
 

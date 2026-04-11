@@ -82,6 +82,8 @@ public class DiffApplyService {
      * 3. Trimmed trailing whitespace per line
      * 4. Fuzzy line-by-line matching (ignoring leading/trailing whitespace)
      * 5. Collapsed whitespace matching (for empty line differences)
+     * 6. Append pattern detection (REPLACE starts with SEARCH)
+     * 7. Similarity-based matching (tolerates small typos using Levenshtein distance)
      */
     private String applyBlock(String content, SearchReplace block) {
         String search = block.search();
@@ -171,6 +173,18 @@ public class DiffApplyService {
                 return newContent;
             }
             return content + "\n" + newContent;
+        }
+
+        // Strategy 7: Similarity-based fuzzy matching (handles small typos like andExpected vs andExpect)
+        FuzzyMatchResult similarityResult = findSimilarityMatch(normalizedContent, normalizedSearch);
+        if (similarityResult != null) {
+            log.info("Applied diff using similarity-based fuzzy matching at line {} (small typos tolerated)",
+                    similarityResult.startLine);
+            String result = applyFuzzyReplace(normalizedContent, similarityResult, replace);
+            if (content.contains("\r\n")) {
+                result = result.replace("\n", "\r\n");
+            }
+            return result;
         }
 
         log.warn("Could not find search block in file. Search text (first 100 chars): {}",
@@ -294,6 +308,128 @@ public class DiffApplyService {
             }
         }
         return null;
+    }
+
+    /**
+     * Finds a match using line similarity comparison.
+     * This handles cases where the AI has small typos (like "andExpected" instead of "andExpect").
+     * Uses Levenshtein distance with a threshold based on line length.
+     */
+    private FuzzyMatchResult findSimilarityMatch(String content, String search) {
+        String[] contentLines = content.split("\n", -1);
+        String[] searchLines = search.split("\n", -1);
+
+        // Filter out empty search lines for matching
+        List<String> nonEmptySearchLines = new ArrayList<>();
+        for (String line : searchLines) {
+            if (!line.trim().isEmpty()) {
+                nonEmptySearchLines.add(line.trim());
+            }
+        }
+
+        if (nonEmptySearchLines.isEmpty() || nonEmptySearchLines.size() < 3) {
+            // Require at least 3 non-empty lines for similarity matching to avoid false positives
+            return null;
+        }
+
+        // Try to find a sequence of similar lines in content
+        for (int i = 0; i < contentLines.length; i++) {
+            int searchIdx = 0;
+            int matchStartLine = -1;
+            int matchEndLine = -1;
+            int totalMismatches = 0;
+
+            for (int j = i; j < contentLines.length && searchIdx < nonEmptySearchLines.size(); j++) {
+                String trimmedContentLine = contentLines[j].trim();
+                if (trimmedContentLine.isEmpty()) {
+                    continue; // Skip empty lines in content
+                }
+
+                String searchLine = nonEmptySearchLines.get(searchIdx);
+
+                // Check if lines are similar enough
+                if (arLinesSimilar(trimmedContentLine, searchLine)) {
+                    if (matchStartLine == -1) {
+                        matchStartLine = j;
+                    }
+                    matchEndLine = j;
+                    searchIdx++;
+
+                    // Count non-exact matches
+                    if (!trimmedContentLine.equals(searchLine)) {
+                        totalMismatches++;
+                    }
+                } else {
+                    break; // Sequence broken
+                }
+            }
+
+            // Found a complete match, but limit total mismatches to avoid false positives
+            // Allow at most 30% of lines to have typos
+            int maxAllowedMismatches = Math.max(2, nonEmptySearchLines.size() * 3 / 10);
+            if (searchIdx == nonEmptySearchLines.size() && matchStartLine != -1
+                    && totalMismatches <= maxAllowedMismatches) {
+                return new FuzzyMatchResult(matchStartLine, matchEndLine - matchStartLine + 1);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Checks if two lines are similar enough to be considered a match.
+     * Uses Levenshtein distance with a threshold based on line length.
+     */
+    private boolean arLinesSimilar(String line1, String line2) {
+        if (line1.equals(line2)) {
+            return true;
+        }
+
+        // For very short lines, require exact match
+        if (line1.length() < 10 || line2.length() < 10) {
+            return false;
+        }
+
+        int distance = levenshteinDistance(line1, line2);
+        int maxLength = Math.max(line1.length(), line2.length());
+
+        // Allow up to 10% difference, with minimum of 3 and maximum of 15 characters
+        // This handles common typos like "andExpected" vs "andExpect" (distance=2)
+        int threshold = Math.min(15, Math.max(3, maxLength / 10));
+
+        return distance <= threshold;
+    }
+
+    /**
+     * Calculates the Levenshtein distance between two strings.
+     * This is the minimum number of single-character edits (insertions, deletions, substitutions)
+     * required to change one string into the other.
+     */
+    private int levenshteinDistance(String s1, String s2) {
+        int m = s1.length();
+        int n = s2.length();
+
+        // Use two rows instead of full matrix to save memory
+        int[] prev = new int[n + 1];
+        int[] curr = new int[n + 1];
+
+        // Initialize first row
+        for (int j = 0; j <= n; j++) {
+            prev[j] = j;
+        }
+
+        for (int i = 1; i <= m; i++) {
+            curr[0] = i;
+            for (int j = 1; j <= n; j++) {
+                int cost = (s1.charAt(i - 1) == s2.charAt(j - 1)) ? 0 : 1;
+                curr[j] = Math.min(Math.min(curr[j - 1] + 1, prev[j] + 1), prev[j - 1] + cost);
+            }
+            // Swap rows
+            int[] temp = prev;
+            prev = curr;
+            curr = temp;
+        }
+
+        return prev[n];
     }
 
     /**

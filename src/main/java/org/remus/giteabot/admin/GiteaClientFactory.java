@@ -1,7 +1,9 @@
 package org.remus.giteabot.admin;
 
 import lombok.extern.slf4j.Slf4j;
-import org.remus.giteabot.repository.RepositoryType;
+import org.remus.giteabot.repository.RepositoryApiClient;
+import org.remus.giteabot.repository.RepositoryProviderMetadata;
+import org.remus.giteabot.repository.RepositoryProviderRegistry;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
@@ -9,72 +11,71 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
- * Factory that creates and caches {@link RestClient} instances from persisted
- * {@link GitIntegration} entities.  Clients are cached by integration ID and
- * {@link GitIntegration#getUpdatedAt()} so that configuration changes
- * automatically produce fresh clients.
+ * Factory that creates and caches {@link RestClient} and {@link RepositoryApiClient}
+ * instances from persisted {@link GitIntegration} entities.
  * <p>
- * Supports multiple providers: Gitea uses {@code Authorization: token <token>},
- * GitLab uses {@code PRIVATE-TOKEN: <token>}.
+ * Clients are cached by integration ID and {@link GitIntegration#getUpdatedAt()}
+ * so that configuration changes automatically produce fresh clients.
+ * <p>
+ * Provider-specific logic (URL resolution, authentication) is delegated to
+ * {@link RepositoryProviderMetadata} implementations via {@link RepositoryProviderRegistry}.
  */
 @Slf4j
 @Service
 public class GiteaClientFactory {
 
     private final GitIntegrationService gitIntegrationService;
+    private final RepositoryProviderRegistry providerRegistry;
 
-    /** Cache key = integrationId, value = (updatedAt-millis, restClient). */
+    /** Cache key = integrationId, value = (updatedAt-millis, restClient, apiClient). */
     private final ConcurrentMap<Long, CachedClient> cache = new ConcurrentHashMap<>();
 
-    public GiteaClientFactory(GitIntegrationService gitIntegrationService) {
+    public GiteaClientFactory(GitIntegrationService gitIntegrationService,
+                              RepositoryProviderRegistry providerRegistry) {
         this.gitIntegrationService = gitIntegrationService;
+        this.providerRegistry = providerRegistry;
     }
 
+
     /**
-     * Returns a {@link RestClient} configured for the given Git integration
-     * (base URL + bearer token).  Results are cached and re-created when the
-     * integration's updatedAt changes.
+     * Returns a {@link RepositoryApiClient} for the given Git integration.
+     * Results are cached and re-created when the integration's updatedAt changes.
      */
-    public RestClient getClient(GitIntegration integration) {
+    public RepositoryApiClient getApiClient(GitIntegration integration) {
+        return getCachedClient(integration).apiClient;
+    }
+
+
+    private CachedClient getCachedClient(GitIntegration integration) {
         CachedClient cached = cache.get(integration.getId());
         long updatedMillis = integration.getUpdatedAt().toEpochMilli();
+
         if (cached != null && cached.updatedAtMillis == updatedMillis) {
-            return cached.client;
+            return cached;
         }
 
-        RestClient client = buildClient(integration);
-        cache.put(integration.getId(), new CachedClient(updatedMillis, client));
-        log.info("Built new {} RestClient for integration '{}' (url={})",
-                integration.getProviderType(), integration.getName(), integration.getUrl());
-        return client;
+        CachedClient newClient = buildClients(integration);
+        cache.put(integration.getId(), newClient);
+        log.info("Built new clients for integration '{}' (type={}, url={})",
+                integration.getName(), integration.getProviderType(), integration.getUrl());
+        return newClient;
     }
 
-    /**
-     * Returns the decrypted token for the given integration.
-     */
-    public String getDecryptedToken(GitIntegration integration) {
-        return gitIntegrationService.decryptToken(integration);
-    }
-
-    public void evict(Long integrationId) {
-        cache.remove(integrationId);
-    }
-
-    private RestClient buildClient(GitIntegration integration) {
+    private CachedClient buildClients(GitIntegration integration) {
+        RepositoryProviderMetadata provider = providerRegistry.getProvider(integration.getProviderType());
         String decryptedToken = gitIntegrationService.decryptToken(integration);
-        RestClient.Builder builder = RestClient.builder()
-                .baseUrl(integration.getUrl())
-                .defaultHeader("Accept", "application/json");
 
-        if (integration.getProviderType() == RepositoryType.GITLAB) {
-            builder.defaultHeader("PRIVATE-TOKEN", decryptedToken);
-        } else {
-            // Gitea (default)
-            builder.defaultHeader("Authorization", "token " + decryptedToken);
-        }
+        log.debug("Building clients for '{}': apiUrl={}, tokenLength={}",
+                integration.getName(),
+                integration.getUrl(),
+                decryptedToken != null ? decryptedToken.length() : 0);
 
-        return builder.build();
+        RestClient restClient = provider.buildRestClient(integration, decryptedToken);
+        var credentials = provider.createCredentials(integration, decryptedToken);
+        RepositoryApiClient apiClient = provider.createClient(restClient, credentials);
+
+        return new CachedClient(integration.getUpdatedAt().toEpochMilli(), restClient, apiClient);
     }
 
-    private record CachedClient(long updatedAtMillis, RestClient client) {}
+    private record CachedClient(long updatedAtMillis, RestClient restClient, RepositoryApiClient apiClient) {}
 }

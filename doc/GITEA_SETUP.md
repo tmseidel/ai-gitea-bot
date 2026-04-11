@@ -1,6 +1,8 @@
-# Gitea Instance Setup
+# Gitea Setup
 
-This guide walks you through preparing your Gitea instance to work with the AI Gitea Bot.
+This guide walks you through preparing your Gitea instance to work with the AI Code Review Bot.
+
+> **Note:** For GitHub setup, see [GitHub Setup](GITHUB_SETUP.md).
 
 ## 1. Create the Bot User
 
@@ -9,7 +11,7 @@ The bot needs its own Gitea user account to post reviews and comments.
 1. Log in to your Gitea instance as an **administrator**
 2. Navigate to **Site Administration → User Accounts → Create User Account**
 3. Fill in the details:
-   - **Username:** `ai_bot` (or any name you prefer — must match the `BOT_USERNAME` setting)
+   - **Username:** `ai_bot` (or any name you prefer — this will be configured in the bot settings)
    - **Email:** `ai_bot@noreply.localhost`
    - **Password:** Choose a strong password
 4. Click **Create User Account**
@@ -52,25 +54,33 @@ The bot authenticates against the Gitea API using a personal access token.
 6. Click **Generate Token**
 7. **Copy the token immediately** — it will not be shown again
 
-Use this token as the `GITEA_TOKEN` environment variable when deploying the bot.
+You'll enter this token when creating a **Git Integration** in the bot's web UI.
 
 ## 4. Configure Webhooks
 
-Webhooks tell Gitea to notify the bot when pull request events occur.
+Webhooks tell Gitea to notify the bot when pull request events occur. Each bot has a unique webhook URL.
+
+### Getting the Webhook URL
+
+1. In the bot's web UI, go to **Bots**
+2. Click on your bot (or create one if you haven't)
+3. The **Webhook URL** is displayed at the top of the edit form
+4. Copy this URL (e.g., `http://your-bot-server:8080/api/webhook/abc123-def456-...`)
 
 ### Repository-level Webhook
 
 1. In the repository, go to **Settings → Webhooks → Add Webhook → Gitea**
 2. Configure:
-   - **Target URL:** `http://<bot-host>:8080/api/webhook`
+   - **Target URL:** Paste the bot's webhook URL
    - **HTTP Method:** POST
    - **Content Type:** application/json
-   - **Secret:** (leave empty or set a shared secret)
+   - **Secret:** (leave empty — authentication is via the URL path)
 3. Under **Trigger On**, select **Custom Events**, then enable:
    - ✅ **Pull Request**
    - ✅ **Issue Comment**
    - ✅ **Pull Request Review**
    - ✅ **Pull Request Comment**
+   - ✅ **Issues** (only if using the agent feature)
 4. Click **Add Webhook**
 
 ### Organization-level Webhook
@@ -80,25 +90,25 @@ To cover all repositories in an organization at once:
 1. Go to the organization's **Settings → Webhooks**
 2. Follow the same configuration as above
 
-### Using Prompt Profiles
+### Multiple Bots
 
-To use a specific prompt profile for a webhook, append the `prompt` query parameter:
+You can create multiple bots with different configurations (different AI providers, different prompts) and point different repositories or organizations to different bot webhook URLs.
 
-```
-http://<bot-host>:8080/api/webhook?prompt=security
-```
+## 5. Configure the Bot
 
-This allows different repositories or organizations to use different review styles.
+In the bot's web UI:
 
-## 5. Configure the Bot Username
+1. **Create a Git Integration:**
+   - Go to **Git Integrations → New Integration**
+   - Select **Gitea** as the provider type
+   - Enter your Gitea URL (e.g., `https://gitea.example.com`)
+   - Enter the API token you created above
+   - Click **Save**
 
-The `BOT_USERNAME` environment variable (default: `ai_bot`) must match the username of the bot account in Gitea. The mention alias (e.g., `@ai_bot`) is derived automatically.
-
-If your bot user is named `my_review_bot`, set:
-
-```bash
-export BOT_USERNAME=my_review_bot
-```
+2. **Create or Edit a Bot:**
+   - Set the **Username** to match the bot's Gitea username (e.g., `ai_bot`)
+   - This is used to detect and ignore the bot's own actions
+   - The mention alias is derived as `@ai_bot`
 
 ## Verification
 

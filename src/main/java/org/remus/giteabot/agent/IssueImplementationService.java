@@ -317,7 +317,7 @@ public class IssueImplementationService {
 
                     // Prepare workspace if not already done
                     if (workspaceDir == null) {
-                        ToolExecutionService.WorkspaceResult workspaceResult = toolExecutionService.prepareWorkspace(owner, repo, defaultBranch, plan.getFileChanges(), repositoryClient.getBaseUrl(), repositoryClient.getToken());
+                        ToolExecutionService.WorkspaceResult workspaceResult = toolExecutionService.prepareWorkspace(owner, repo, defaultBranch, plan.getFileChanges(), repositoryClient.getCloneUrl(), repositoryClient.getToken());
                         if (!workspaceResult.success()) {
                             log.error("Failed to prepare workspace for validation: {}", workspaceResult.error());
                             // Post error as comment so it's visible
@@ -582,7 +582,7 @@ public class IssueImplementationService {
                 // Prepare workspace if not already done
                 if (workspaceDir == null) {
                     ToolExecutionService.WorkspaceResult workspaceResult =
-                            toolExecutionService.prepareWorkspace(owner, repo, workingBranch, currentPlan.getFileChanges(), repositoryClient.getBaseUrl(), repositoryClient.getToken());
+                            toolExecutionService.prepareWorkspace(owner, repo, workingBranch, currentPlan.getFileChanges(), repositoryClient.getCloneUrl(), repositoryClient.getToken());
                     if (!workspaceResult.success()) {
                         log.error("Failed to prepare workspace for validation: {}", workspaceResult.error());
                         repositoryClient.postComment(owner, repo, issueNumber,

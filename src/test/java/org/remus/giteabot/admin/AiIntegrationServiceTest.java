@@ -32,20 +32,21 @@ class AiIntegrationServiceTest {
 
         AiIntegration result = aiIntegrationService.save(integration);
 
-        assertEquals("ENC:encrypted-value", result.getApiKey());
+        assertEquals("encrypted-value", result.getApiKey());
         verify(encryptionService).encrypt("plain-api-key");
     }
 
     @Test
-    void save_alreadyEncryptedKey_doesNotDoubleEncrypt() {
+    void save_alwaysCallsEncrypt() {
         AiIntegration integration = new AiIntegration();
-        integration.setApiKey("ENC:already-encrypted");
+        integration.setApiKey("any-api-key");
+        when(encryptionService.encrypt("any-api-key")).thenReturn("encrypted-value");
         when(aiIntegrationRepository.save(any(AiIntegration.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         AiIntegration result = aiIntegrationService.save(integration);
 
-        assertEquals("ENC:already-encrypted", result.getApiKey());
-        verify(encryptionService, never()).encrypt(anyString());
+        assertEquals("encrypted-value", result.getApiKey());
+        verify(encryptionService).encrypt("any-api-key");
     }
 
     @Test
@@ -61,9 +62,9 @@ class AiIntegrationServiceTest {
     }
 
     @Test
-    void decryptApiKey_encryptedKey_decrypts() {
+    void decryptApiKey_callsDecrypt() {
         AiIntegration integration = new AiIntegration();
-        integration.setApiKey("ENC:encrypted-value");
+        integration.setApiKey("encrypted-value");
         when(encryptionService.decrypt("encrypted-value")).thenReturn("plain-api-key");
 
         String result = aiIntegrationService.decryptApiKey(integration);

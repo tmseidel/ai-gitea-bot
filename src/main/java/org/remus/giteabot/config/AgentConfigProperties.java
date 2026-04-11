@@ -40,6 +40,14 @@ public class AgentConfigProperties {
     private String branchPrefix = "ai-agent/";
 
     /**
+     * Maximum characters of file content to include in prompts.
+     * Lower values are needed for local models with smaller context windows.
+     * Default: 100000 (suitable for cloud providers like Claude/GPT-4)
+     * For local models with 16k context: use ~20000
+     */
+    private int maxFileContentChars = 100000;
+
+    /**
      * Validation settings.
      */
     private ValidationConfig validation = new ValidationConfig();

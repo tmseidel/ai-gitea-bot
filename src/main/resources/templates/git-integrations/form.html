@@ -23,27 +23,49 @@
                             <label for="name" class="form-label">Name</label>
                             <input type="text" class="form-control" id="name" th:field="*{name}"
                                    placeholder="e.g. My Gitea Server" required/>
+                            <div class="form-text">A friendly name to identify this integration.</div>
                         </div>
                         <div class="col-md-6">
                             <label for="providerType" class="form-label">Provider Type</label>
-                            <select class="form-select" id="providerType" th:field="*{providerType}" required>
+                            <select class="form-select" id="providerType" th:field="*{providerType}" required
+                                    onchange="updateFormFields()">
                                 <option value="">Select a provider...</option>
                                 <option th:each="type : ${providerTypes}"
                                         th:value="${type}" th:text="${type}"></option>
                             </select>
+                            <div class="form-text">The Git hosting platform you want to connect to.</div>
                         </div>
 
-                        <div class="col-md-6">
+                        <!-- URL field - shown for Gitea only -->
+                        <div class="col-md-6" id="urlField">
                             <label for="url" class="form-label">URL</label>
                             <input type="url" class="form-control" id="url" th:field="*{url}"
-                                   placeholder="e.g. https://gitea.example.com" required/>
+                                   placeholder="e.g. https://gitea.example.com"/>
+                            <div class="form-text" id="urlDescription">
+                                The base URL of your Gitea instance.
+                            </div>
                         </div>
-                        <div class="col-md-6">
-                            <label for="token" class="form-label">Token</label>
+
+                        <!-- Username field - shown for Bitbucket only -->
+                        <div class="col-md-6" id="usernameField" style="display: none;">
+                            <label for="username" class="form-label">Username</label>
+                            <input type="text" class="form-control" id="username" th:field="*{username}"
+                                   placeholder="e.g. your-bitbucket-username"/>
+                            <div class="form-text">
+                                Your Bitbucket username (used together with the App Password for authentication).
+                            </div>
+                        </div>
+
+                        <!-- Token field - always shown -->
+                        <div class="col-md-6" id="tokenField">
+                            <label for="token" class="form-label" id="tokenLabel">Token</label>
                             <input type="password" class="form-control" id="token" name="token"
                                    placeholder="Enter access token"/>
-                            <div th:if="${integration.id != null}" class="form-text">
-                                Leave blank to keep current token.
+                            <div th:if="${integration.id != null}" class="form-text text-warning">
+                                <i class="bi bi-info-circle"></i> Leave blank to keep current token.
+                            </div>
+                            <div class="form-text" id="tokenDescription">
+                                The access token for API authentication.
                             </div>
                         </div>
                     </div>
@@ -59,6 +81,65 @@
                 </form>
             </div>
         </div>
+
+        <script th:inline="javascript">
+            function updateFormFields() {
+                const providerType = document.getElementById('providerType').value;
+                const urlField = document.getElementById('urlField');
+                const urlInput = document.getElementById('url');
+                const urlDescription = document.getElementById('urlDescription');
+                const usernameField = document.getElementById('usernameField');
+                const usernameInput = document.getElementById('username');
+                const tokenLabel = document.getElementById('tokenLabel');
+                const tokenDescription = document.getElementById('tokenDescription');
+
+                // Reset visibility
+                urlField.style.display = 'block';
+                usernameField.style.display = 'none';
+
+                if (providerType === 'GITEA') {
+                    // Gitea: URL + Token
+                    urlField.style.display = 'block';
+                    urlInput.required = true;
+                    urlInput.placeholder = 'e.g. https://gitea.example.com';
+                    urlDescription.textContent = 'The base URL of your Gitea instance (e.g. https://gitea.example.com).';
+                    usernameField.style.display = 'none';
+                    usernameInput.required = false;
+                    tokenLabel.textContent = 'Token';
+                    tokenDescription.textContent = 'A Gitea access token with repository read/write permissions.';
+                } else if (providerType === 'GITHUB') {
+                    // GitHub: Token only (URL is fixed)
+                    urlField.style.display = 'none';
+                    urlInput.required = false;
+                    urlInput.value = 'https://github.com';
+                    usernameField.style.display = 'none';
+                    usernameInput.required = false;
+                    tokenLabel.textContent = 'Personal Access Token';
+                    tokenDescription.textContent = 'A GitHub Personal Access Token (classic) or Fine-grained token with repository permissions.';
+                } else if (providerType === 'BITBUCKET') {
+                    // Bitbucket: Username + Token (App Password)
+                    urlField.style.display = 'none';
+                    urlInput.required = false;
+                    urlInput.value = 'https://bitbucket.org';
+                    usernameField.style.display = 'block';
+                    usernameInput.required = true;
+                    tokenLabel.textContent = 'App Password';
+                    tokenDescription.textContent = 'A Bitbucket App Password with repository read/write permissions. Create one at Bitbucket Settings → App passwords.';
+                } else {
+                    // Default / no selection
+                    urlField.style.display = 'block';
+                    urlInput.required = true;
+                    urlDescription.textContent = 'The base URL of your Git server.';
+                    usernameField.style.display = 'none';
+                    usernameInput.required = false;
+                    tokenLabel.textContent = 'Token';
+                    tokenDescription.textContent = 'The access token for API authentication.';
+                }
+            }
+
+            // Initialize on page load
+            document.addEventListener('DOMContentLoaded', updateFormFields);
+        </script>
 
     </div>
 </div>

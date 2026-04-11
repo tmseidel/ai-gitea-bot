@@ -24,26 +24,13 @@ mvn spring-boot:run
 
 This starts the bot on `http://localhost:8080` using the default profile:
 - **H2 in-memory database** (no external database needed)
-- Reads configuration from `src/main/resources/application.properties`
+- All configuration done via web UI
 
-### Configuration for Local Development
+### Initial Setup
 
-The key environment variables to set:
-
-```bash
-export GITEA_URL=http://localhost:3000
-export GITEA_TOKEN=your-local-gitea-token
-export AI_ANTHROPIC_API_KEY=your-api-key
-# Or for OpenAI:
-# export AI_PROVIDER=openai
-# export AI_MODEL=gpt-4o
-# export AI_OPENAI_API_KEY=your-openai-key
-# Or for Ollama:
-# export AI_PROVIDER=ollama
-# export AI_MODEL=llama3.2:1b
-```
-
-Or edit `src/main/resources/application.properties` directly for local development.
+1. Open `http://localhost:8080` in your browser
+2. Create an admin account on the setup page
+3. Log in and configure integrations via the web UI
 
 ## Local Gitea Instance
 
@@ -55,7 +42,7 @@ A pre-configured Gitea instance is provided under `systemtest/` for local testin
 docker compose -f systemtest/docker-compose-local-gitea.yml up -d
 ```
 
-This starts **Gitea 1.25.5** on `http://localhost:3000` with:
+This starts **Gitea** on `http://localhost:3000` with:
 - Pre-configured test data (users, repos, PRs) in `systemtest/gitea/`
 - Webhook delivery to the host enabled (`GITEA__webhook__ALLOWED_HOST_LIST=*`)
 - `host.docker.internal` mapped to the host network
@@ -66,11 +53,15 @@ The local Gitea instance comes with existing test data in `systemtest/gitea/`. L
 
 ### Configuring the Webhook
 
-1. Open `http://localhost:3000` in your browser
-2. Navigate to a repository's **Settings → Webhooks → Add Webhook → Gitea**
-3. Set the **Target URL** to: `http://host.docker.internal:8080/api/webhook`
-4. Select events: **Pull Request**, **Issue Comment**, **Pull Request Review**, **Pull Request Comment**
-5. Save the webhook
+1. In the bot's web UI, create:
+   - An **AI Integration** (e.g., Anthropic with your API key)
+   - A **Git Integration** pointing to `http://localhost:3000` with a Gitea token
+   - A **Bot** using both integrations
+2. Copy the bot's **Webhook URL**
+3. In Gitea (`http://localhost:3000`), navigate to a repository's **Settings → Webhooks → Add Webhook → Gitea**
+4. Set the **Target URL** to the webhook URL (use `http://host.docker.internal:8080/api/webhook/...` to reach the host from Docker)
+5. Select events: **Pull Request**, **Issue Comment**, **Pull Request Review**, **Pull Request Comment**
+6. Save the webhook
 
 The `host.docker.internal` hostname allows the Gitea Docker container to reach the bot running natively on your host machine.
 
@@ -98,23 +89,119 @@ mvn test
 
 ```
 src/main/java/org/remus/giteabot/
-├── config/       # Configuration classes, prompt service, bot config
-├── gitea/        # Webhook controller, API client, payload models
-│   └── model/    # WebhookPayload, GiteaReview, GiteaReviewComment
-├── ai/           # AI provider abstraction layer
-│   ├── anthropic/  # Anthropic API client and request/response models
-│   ├── openai/     # OpenAI API client and request/response models
-│   └── ollama/     # Ollama API client and request/response models
-├── review/       # CodeReviewService (orchestration)
-└── session/      # ReviewSession, ConversationMessage, SessionService
+├── admin/          # Admin controllers, services, entities
+│   ├── Bot.java, BotService.java, BotController.java
+│   ├── AiIntegration.java, AiIntegrationService.java, AiIntegrationController.java
+│   ├── GitIntegration.java, GitIntegrationService.java, GitIntegrationController.java
+│   ├── AiClientFactory.java        # Creates AiClient instances per integration
+│   └── EncryptionService.java      # API key encryption
+├── ai/             # AI provider abstraction layer
+│   ├── AiClient.java               # Provider-agnostic interface
+│   ├── AbstractAiClient.java       # Shared chunking/retry logic
+│   ├── AiProviderMetadata.java     # Interface for provider metadata
+│   ├── AiProviderRegistry.java     # Collects all provider metadata
+│   ├── anthropic/                  # Anthropic implementation
+│   │   ├── AnthropicAiClient.java
+│   │   └── AnthropicProviderMetadata.java
+│   ├── openai/                     # OpenAI implementation
+│   │   ├── OpenAiClient.java
+│   │   └── OpenAiProviderMetadata.java
+│   ├── ollama/                     # Ollama implementation
+│   │   ├── OllamaClient.java
+│   │   └── OllamaProviderMetadata.java
+│   └── llamacpp/                   # llama.cpp implementation
+│       ├── LlamaCppClient.java
+│       └── LlamaCppProviderMetadata.java
+├── gitea/          # Gitea integration
+│   ├── GiteaWebhookController.java
+│   ├── GiteaApiClient.java
+│   └── model/      # WebhookPayload, GiteaReview, GiteaReviewComment
+├── github/         # GitHub integration
+│   ├── GitHubWebhookController.java
+│   ├── GitHubApiClient.java
+│   └── model/      # GitHub-specific payload models
+├── repository/     # Repository provider abstraction
+│   ├── RepositoryApiClient.java       # Provider-agnostic interface
+│   ├── RepositoryProviderMetadata.java
+│   ├── RepositoryProviderRegistry.java
+│   ├── GiteaProviderMetadata.java
+│   └── GitHubProviderMetadata.java
+├── agent/          # Issue implementation agent
+├── review/         # CodeReviewService (orchestration)
+├── session/        # ReviewSession, ConversationMessage, SessionService
+└── config/         # Spring configuration classes
+
+prompts/            # System prompt templates
+├── default.md      # Concise review prompt
+└── local-llm.md    # Detailed review prompt for local models
 ```
 
 ## Useful Endpoints
 
 | Endpoint | Description |
-|---|---|
-| `POST /api/webhook` | Webhook receiver |
-| `POST /api/webhook?prompt=security` | Webhook with specific prompt profile |
+|----------|-------------|
+| `POST /api/webhook/{secret}` | Gitea webhook receiver |
+| `POST /api/github-webhook/{secret}` | GitHub webhook receiver |
+| `GET /dashboard` | Admin dashboard |
+| `GET /bots` | Bot management |
+| `GET /ai-integrations` | AI integration management |
+| `GET /git-integrations` | Git integration management |
 | `GET /actuator/health` | Health check |
 | `GET /actuator/info` | Application info |
+
+## Adding a New AI Provider
+
+To add support for a new AI provider:
+
+1. Create a new package under `org.remus.giteabot.ai.{provider}/`
+2. Implement `AiProviderMetadata`:
+   ```java
+   @Component
+   public class NewProviderMetadata implements AiProviderMetadata {
+       public static final String PROVIDER_TYPE = "newprovider";
+       public static final String DEFAULT_API_URL = "https://api.newprovider.com";
+       public static final List<String> SUGGESTED_MODELS = List.of("model-a", "model-b");
+       
+       // Implement all interface methods...
+   }
+   ```
+3. Extend `AbstractAiClient`:
+   ```java
+   public class NewProviderClient extends AbstractAiClient {
+       // Implement sendReviewRequest() and sendChatRequest()
+   }
+   ```
+4. The provider will automatically be discovered by `AiProviderRegistry` via Spring's component scanning
+
+## Adding a New Git Provider
+
+To add support for a new Git hosting platform:
+
+1. Add the new type to `RepositoryType` enum in `org.remus.giteabot.repository`
+2. Create a new package under `org.remus.giteabot.{provider}/`
+3. Implement `RepositoryApiClient`:
+   ```java
+   public class NewProviderApiClient implements RepositoryApiClient {
+       // Implement all interface methods...
+   }
+   ```
+4. Implement `RepositoryProviderMetadata`:
+   ```java
+   @Component
+   public class NewProviderMetadata implements RepositoryProviderMetadata {
+       @Override
+       public RepositoryType getProviderType() {
+           return RepositoryType.NEW_PROVIDER;
+       }
+       
+       @Override
+       public String getDefaultWebUrl() {
+           return "https://newprovider.example.com";
+       }
+       
+       // Implement all interface methods...
+   }
+   ```
+5. Create a webhook controller to handle provider-specific payload format
+6. The provider will automatically be discovered by `RepositoryProviderRegistry`
 

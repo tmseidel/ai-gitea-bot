@@ -40,3 +40,7 @@ target/
 .DS_Store
 Thumbs.db
 /systemtest/gitea/
+
+# Local database
+data/
+

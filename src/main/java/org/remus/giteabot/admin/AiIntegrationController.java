@@ -1,6 +1,7 @@
 package org.remus.giteabot.admin;
 
 import lombok.extern.slf4j.Slf4j;
+import org.remus.giteabot.ai.AiProviderRegistry;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
@@ -14,9 +15,12 @@ import java.util.List;
 public class AiIntegrationController {
 
     private final AiIntegrationService aiIntegrationService;
+    private final AiProviderRegistry providerRegistry;
 
-    public AiIntegrationController(AiIntegrationService aiIntegrationService) {
+    public AiIntegrationController(AiIntegrationService aiIntegrationService,
+                                   AiProviderRegistry providerRegistry) {
         this.aiIntegrationService = aiIntegrationService;
+        this.providerRegistry = providerRegistry;
     }
 
     @GetMapping
@@ -30,7 +34,7 @@ public class AiIntegrationController {
     @GetMapping("/new")
     public String newForm(Model model) {
         model.addAttribute("integration", new AiIntegration());
-        model.addAttribute("providerTypes", List.of("anthropic", "openai", "ollama", "llamacpp"));
+        addProviderMetadataToModel(model);
         model.addAttribute("activeNav", "ai-integrations");
         return "ai-integrations/form";
     }
@@ -40,7 +44,7 @@ public class AiIntegrationController {
         return aiIntegrationService.findById(id)
                 .map(integration -> {
                     model.addAttribute("integration", integration);
-                    model.addAttribute("providerTypes", List.of("anthropic", "openai", "ollama", "llamacpp"));
+                    addProviderMetadataToModel(model);
                     model.addAttribute("activeNav", "ai-integrations");
                     return "ai-integrations/form";
                 })
@@ -50,9 +54,25 @@ public class AiIntegrationController {
                 });
     }
 
+    private void addProviderMetadataToModel(Model model) {
+        model.addAttribute("providerTypes", providerRegistry.getProviderTypes());
+        model.addAttribute("defaultApiUrls", providerRegistry.getDefaultApiUrls());
+        model.addAttribute("suggestedModels", providerRegistry.getSuggestedModels());
+    }
+
     @PostMapping("/save")
-    public String save(@ModelAttribute AiIntegration integration, RedirectAttributes redirectAttributes) {
+    public String save(@ModelAttribute AiIntegration integration,
+                       @RequestParam(required = false) String apiKey,
+                       RedirectAttributes redirectAttributes) {
         try {
+            // If editing an existing integration and no new API key provided,
+            // keep the existing encrypted API key
+            if (integration.getId() != null && (apiKey == null || apiKey.isBlank())) {
+                aiIntegrationService.findById(integration.getId())
+                        .ifPresent(existing -> integration.setApiKey(existing.getApiKey()));
+            } else {
+                integration.setApiKey(apiKey);
+            }
             aiIntegrationService.save(integration);
             redirectAttributes.addFlashAttribute("success", "AI Integration saved successfully");
         } catch (Exception e) {

@@ -54,7 +54,13 @@ ENV PATH="${GOPATH}/bin:/usr/lib/go/bin:${PATH}"
 
 WORKDIR /app
 COPY --from=build --chown=appuser:appgroup /app/target/*.jar app.jar
+
+# Copy prompts directory - these serve as defaults
+# They can be overridden by mounting a volume at runtime
 COPY --chown=appuser:appgroup prompts/ /app/prompts/
+
+# Verify prompts exist (fail build if missing)
+RUN test -f /app/prompts/default.md && echo "Prompts verified"
 
 USER appuser
 

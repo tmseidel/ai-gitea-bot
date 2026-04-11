@@ -32,8 +32,8 @@ public class AiIntegrationService {
 
     public AiIntegration save(AiIntegration integration) {
         String apiKey = integration.getApiKey();
-        if (apiKey != null && !apiKey.isBlank() && !apiKey.startsWith("ENC:")) {
-            integration.setApiKey("ENC:" + encryptionService.encrypt(apiKey));
+        if (apiKey != null && !apiKey.isBlank()) {
+            integration.setApiKey(encryptionService.encrypt(apiKey));
         }
         return aiIntegrationRepository.save(integration);
     }
@@ -47,9 +47,6 @@ public class AiIntegrationService {
         if (apiKey == null || apiKey.isBlank()) {
             return null;
         }
-        if (apiKey.startsWith("ENC:")) {
-            return encryptionService.decrypt(apiKey.substring(4));
-        }
-        return apiKey;
+        return encryptionService.decrypt(apiKey);
     }
 }

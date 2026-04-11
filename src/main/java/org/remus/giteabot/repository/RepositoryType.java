@@ -7,6 +7,7 @@ package org.remus.giteabot.repository;
  */
 public enum RepositoryType {
     GITEA,
+    GITHUB,
     GITLAB,
     BITBUCKET
 }

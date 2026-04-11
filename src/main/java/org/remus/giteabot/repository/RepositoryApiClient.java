@@ -1,5 +1,6 @@
 package org.remus.giteabot.repository;
 
+import org.remus.giteabot.repository.model.RepositoryCredentials;
 import org.remus.giteabot.repository.model.Review;
 import org.remus.giteabot.repository.model.ReviewComment;
 
@@ -9,8 +10,10 @@ import java.util.Map;
 /**
  * Provider-agnostic interface for repository operations (pull requests, reviews,
  * comments, branches, files).  Implementations exist for Gitea
- * ({@link org.remus.giteabot.gitea.GiteaApiClient}), with future support for
- * GitLab, Bitbucket, etc.
+ * ({@link org.remus.giteabot.gitea.GiteaApiClient}), GitHub
+ * ({@link org.remus.giteabot.github.GitHubApiClient}), and Bitbucket Cloud
+ * ({@link org.remus.giteabot.bitbucket.BitbucketApiClient}), with future support for
+ * GitLab, etc.
  * <p>
  * Each bot receives its own {@code RepositoryApiClient} instance, pre-configured
  * with the bot's credentials from the {@link org.remus.giteabot.admin.GitIntegration}
@@ -18,11 +21,23 @@ import java.util.Map;
  */
 public interface RepositoryApiClient {
 
-    /** Returns the base URL of the repository provider (e.g. {@code https://gitea.example.com}). */
-    String getBaseUrl();
+    /** Returns the credentials used by this client (base URL, clone URL, username, token). */
+    RepositoryCredentials getCredentials();
+
+    /** Returns the API base URL of the repository provider (e.g. {@code https://api.github.com}). */
+    default String getBaseUrl() {
+        return getCredentials().baseUrl();
+    }
+
+    /** Returns the web/clone URL of the repository provider (e.g. {@code https://github.com}). */
+    default String getCloneUrl() {
+        return getCredentials().cloneUrl();
+    }
 
     /** Returns the authentication token used by this client. */
-    String getToken();
+    default String getToken() {
+        return getCredentials().token();
+    }
 
     // ---- Pull request operations ----
 

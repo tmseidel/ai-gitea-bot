@@ -6,13 +6,12 @@ import org.remus.giteabot.ai.AiMessage;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
 /**
  * AI client implementation for llama.cpp server.
- * Uses the OpenAI-compatible /v1/chat/completions endpoint.
+ * Uses the native /completion endpoint for full GBNF grammar support.
  * <p>
  * Supports GBNF grammar constraints for structured JSON output, which significantly
  * improves reliability for the agent feature compared to unconstrained generation.
@@ -33,48 +32,26 @@ public class LlamaCppClient extends AbstractAiClient {
      * - done: boolean indicating completion
      */
     private static final String AGENT_JSON_GRAMMAR = """
-            root ::= "{" ws root-content "}" ws
-            root-content ::= (file-changes-field ws)? (run-tool-field ws)? (message-field ws)? done-field
-            
-            file-changes-field ::= "\\"fileChanges\\"" ws ":" ws file-changes-array ","?
-            file-changes-array ::= "[" ws (file-change ("," ws file-change)*)? "]"
-            file-change ::= "{" ws file-change-content "}"
-            file-change-content ::= path-field "," ws operation-field "," ws content-field
-            path-field ::= "\\"path\\"" ws ":" ws string
-            operation-field ::= "\\"operation\\"" ws ":" ws operation-value
-            operation-value ::= "\\"CREATE\\"" | "\\"MODIFY\\"" | "\\"DELETE\\""
-            content-field ::= "\\"content\\"" ws ":" ws string
-            
-            run-tool-field ::= "\\"runTool\\"" ws ":" ws run-tool-object ","?
-            run-tool-object ::= "{" ws tool-content "}" | "null"
-            tool-content ::= tool-name-field "," ws tool-args-field
-            tool-name-field ::= "\\"name\\"" ws ":" ws string
-            tool-args-field ::= "\\"arguments\\"" ws ":" ws string
-            
-            message-field ::= "\\"message\\"" ws ":" ws string ","?
-            
-            done-field ::= "\\"done\\"" ws ":" ws boolean
-            
-            string ::= "\\"" ([^"\\\\] | "\\\\" ["\\\\/bfnrt] | "\\\\u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F])* "\\""
-            boolean ::= "true" | "false"
+            root ::= "{" ws members ws "}" ws
+            members ::= pair ("," ws pair)*
+            pair ::= string ws ":" ws value
+            value ::= string | number | object | array | "true" | "false" | "null"
+            object ::= "{" ws (members ws)? "}"
+            array ::= "[" ws (value ("," ws value)*)? ws "]"
+            string ::= "\\"" ([^"\\\\\\x00-\\x1f] | "\\\\" ["\\\\/bfnrt] | "\\\\u" [0-9a-fA-F]{4})* "\\""
+            number ::= "-"? ([0-9] | [1-9] [0-9]*) ("." [0-9]+)? ([eE] [-+]? [0-9]+)?
             ws ::= [ \\t\\n\\r]*
             """;
 
     /**
-     * Stop sequences to prevent models from generating chat template tokens.
-     * Different models use different chat formats, so we include common ones.
+     * Stop sequences to prevent runaway generation.
      */
     private static final List<String> STOP_SEQUENCES = List.of(
             "<|im_start|>",
             "<|im_end|>",
             "<|end|>",
             "<|eot_id|>",
-            "[INST]",
-            "[/INST]",
-            "<<SYS>>",
-            "<</SYS>>",
-            "<|user|>",
-            "<|assistant|>"
+            "<|endoftext|>"
     );
 
     public LlamaCppClient(RestClient restClient, String model, int maxTokens,
@@ -87,29 +64,17 @@ public class LlamaCppClient extends AbstractAiClient {
     @Override
     protected String sendReviewRequest(String systemPrompt, String effectiveModel,
                                        int maxTokens, String userMessage) {
-        List<LlamaCppRequest.Message> messages = new ArrayList<>();
-        messages.add(LlamaCppRequest.Message.builder().role("system").content(systemPrompt).build());
-        messages.add(LlamaCppRequest.Message.builder().role("user").content(userMessage).build());
-
+        String prompt = buildChatPrompt(systemPrompt, userMessage);
         String grammar = shouldUseJsonGrammar(systemPrompt) ? AGENT_JSON_GRAMMAR : null;
-        return doRequest(effectiveModel, messages, maxTokens, "review", grammar);
+        return doRequest(prompt, maxTokens, "review", grammar);
     }
 
     @Override
     protected String sendChatRequest(String systemPrompt, String effectiveModel,
                                      int maxTokens, List<AiMessage> conversationMessages) {
-        List<LlamaCppRequest.Message> messages = new ArrayList<>();
-        messages.add(LlamaCppRequest.Message.builder().role("system").content(systemPrompt).build());
-
-        for (AiMessage m : conversationMessages) {
-            messages.add(LlamaCppRequest.Message.builder()
-                    .role(m.getRole())
-                    .content(m.getContent())
-                    .build());
-        }
-
+        String prompt = buildChatPrompt(systemPrompt, conversationMessages);
         String grammar = shouldUseJsonGrammar(systemPrompt) ? AGENT_JSON_GRAMMAR : null;
-        return doRequest(effectiveModel, messages, maxTokens, "chat", grammar);
+        return doRequest(prompt, maxTokens, "chat", grammar);
     }
 
     @Override
@@ -127,6 +92,32 @@ public class LlamaCppClient extends AbstractAiClient {
     }
 
     /**
+     * Builds a chat prompt using ChatML format (used by Qwen, Mistral, etc.)
+     */
+    private String buildChatPrompt(String systemPrompt, String userMessage) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<|im_start|>system\n").append(systemPrompt).append("<|im_end|>\n");
+        sb.append("<|im_start|>user\n").append(userMessage).append("<|im_end|>\n");
+        sb.append("<|im_start|>assistant\n");
+        return sb.toString();
+    }
+
+    /**
+     * Builds a chat prompt from conversation history using ChatML format.
+     */
+    private String buildChatPrompt(String systemPrompt, List<AiMessage> messages) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<|im_start|>system\n").append(systemPrompt).append("<|im_end|>\n");
+
+        for (AiMessage msg : messages) {
+            sb.append("<|im_start|>").append(msg.getRole()).append("\n");
+            sb.append(msg.getContent()).append("<|im_end|>\n");
+        }
+        sb.append("<|im_start|>assistant\n");
+        return sb.toString();
+    }
+
+    /**
      * Detects whether the system prompt is requesting JSON output for the agent.
      * If so, we enable GBNF grammar constraints for reliable structured responses.
      */
@@ -135,7 +126,6 @@ public class LlamaCppClient extends AbstractAiClient {
             return false;
         }
         String lower = systemPrompt.toLowerCase(Locale.ROOT);
-        // Detect if the prompt asks for JSON output (typically the agent prompt)
         return lower.contains("respond with a json")
                 || lower.contains("output json")
                 || (lower.contains("output format") && lower.contains("json"))
@@ -143,15 +133,19 @@ public class LlamaCppClient extends AbstractAiClient {
                 || lower.contains("\"runtool\"");
     }
 
-    private String doRequest(String model, List<LlamaCppRequest.Message> messages,
-                             int maxTokens, String context, String grammar) {
+    private String doRequest(String prompt, int maxTokens, String context, String grammar) {
         LlamaCppRequest.LlamaCppRequestBuilder requestBuilder = LlamaCppRequest.builder()
-                .model(model)
-                .messages(messages)
-                .maxTokens(maxTokens)
+                .prompt(prompt)
+                .nPredict(maxTokens)
                 .stream(false)
                 .stop(STOP_SEQUENCES)
-                .temperature(0.7); // Balanced temperature for detailed but coherent responses
+                .temperature(0.7)
+                .topP(0.9)
+                .topK(40)
+                .repeatPenalty(1.1)
+                .frequencyPenalty(0.0)
+                .presencePenalty(0.0)
+                .cachePrompt(true);
 
         if (grammar != null) {
             requestBuilder.grammar(grammar);
@@ -160,11 +154,11 @@ public class LlamaCppClient extends AbstractAiClient {
 
         LlamaCppRequest request = requestBuilder.build();
 
-        log.debug("llama.cpp request to /v1/chat/completions: model={}, messages={}, maxTokens={}",
-                model, messages.size(), maxTokens);
+        log.debug("llama.cpp request to /completion: promptLength={}, maxTokens={}, grammar={}",
+                prompt.length(), maxTokens, grammar != null);
 
         LlamaCppResponse response = restClient.post()
-                .uri("/v1/chat/completions")
+                .uri("/completion")
                 .body(request)
                 .retrieve()
                 .body(LlamaCppResponse.class);
@@ -173,26 +167,24 @@ public class LlamaCppClient extends AbstractAiClient {
     }
 
     private String extractText(LlamaCppResponse response, String context) {
-        if (response == null || response.getChoices() == null || response.getChoices().isEmpty()) {
+        if (response == null || response.getContent() == null) {
             log.warn("Empty response from llama.cpp server");
             return "Unable to generate " + context + " - empty response from AI.";
         }
 
-        LlamaCppResponse.Choice firstChoice = response.getChoices().getFirst();
-        if (firstChoice == null
-                || firstChoice.getMessage() == null
-                || firstChoice.getMessage().getContent() == null) {
-            log.warn("Empty message in llama.cpp response");
-            return "Unable to generate " + context + " - empty response from AI.";
+        String result = response.getContent();
+
+        // Log token usage
+        if (response.getTokensEvaluated() != null && response.getTokensPredicted() != null) {
+            log.info("llama.cpp {} response: {} prompt tokens, {} generated tokens",
+                    context,
+                    response.getTokensEvaluated(),
+                    response.getTokensPredicted());
         }
 
-        String result = firstChoice.getMessage().getContent();
-
-        if (response.getUsage() != null) {
-            log.info("llama.cpp {} response: {} prompt tokens, {} completion tokens",
-                    context,
-                    response.getUsage().getPromptTokens(),
-                    response.getUsage().getCompletionTokens());
+        // Log if stopped due to limits
+        if (Boolean.TRUE.equals(response.getStoppedLimit())) {
+            log.warn("llama.cpp {} response was truncated due to max token limit", context);
         }
 
         return result;

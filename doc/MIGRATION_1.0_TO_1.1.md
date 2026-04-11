@@ -1,6 +1,6 @@
 # Migration Guide: 1.0.0 → 1.1.0
 
-This guide helps you upgrade AI Gitea Bot from version 1.0.0 to 1.1.0, which introduces a web-based management UI with multi-bot support.
+This guide helps you upgrade AI Code Review Bot from version 1.0.0 to 1.1.0, which introduces a web-based management UI with multi-bot support.
 
 ## ⚠️ Breaking Changes
 
@@ -23,7 +23,7 @@ The legacy `/api/webhook` endpoint (without a path variable) has been **removed*
 - **Web Dashboard**: Manage bots, AI integrations, and Git integrations through a browser UI
 - **Multi-Bot Support**: Create and configure multiple bots, each with their own webhook URL
 - **AI Integration Management**: Configure multiple AI providers (Anthropic, OpenAI, Ollama, llama.cpp) via UI
-- **Git Integration Management**: Configure Git providers (Gitea) via UI
+- **Git Integration Management**: Configure Git providers (Gitea, GitHub, GitHub Enterprise) via UI
 - **Encrypted Secrets**: API keys and tokens are encrypted at rest in the database
 - **Admin Authentication**: Secure the management UI with username/password authentication
 - **Per-Bot Statistics**: Track webhook calls, AI token usage, and errors per bot
@@ -104,9 +104,14 @@ After logging in, you **must** recreate your configuration through the UI:
 2. **Create Git Integrations** matching your previous Gitea configuration (URL, token)
 3. **Create Bots** that combine an AI + Git integration with a unique webhook URL
 
-### 6. Update Gitea Webhooks
+### 6. Update Webhooks in Git Providers
 
-Since the legacy `/api/webhook` endpoint has been removed, update all Gitea repository webhooks to use the new per-bot webhook URL (`/api/webhook/{secret}`). The webhook secret is shown in the bot management UI after creating a bot.
+Since the legacy `/api/webhook` endpoint has been removed, update all webhooks in your Git provider to use the new per-bot webhook URL. The webhook URL format depends on the provider:
+
+- **Gitea**: `/api/webhook/{secret}`
+- **GitHub**: `/api/github-webhook/{secret}`
+
+The webhook secret is shown in the bot management UI after creating a bot.
 
 ## New Environment Variables
 

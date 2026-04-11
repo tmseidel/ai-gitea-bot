@@ -1,23 +1,23 @@
 # Issue Implementation Agent
 
-The AI Gitea Bot includes an **autonomous issue implementation agent** that can be assigned to Gitea issues. When assigned, the agent analyzes the issue description, generates an implementation plan using AI, and automatically creates a pull request with the proposed changes.
+The AI Code Review Bot includes an **autonomous issue implementation agent** that can be assigned to issues in your Git hosting platform (Gitea or GitHub). When assigned, the agent analyzes the issue description, generates an implementation plan using AI, and automatically creates a pull request with the proposed changes.
 
 ## How It Works
 
 ```mermaid
 sequenceDiagram
     participant User
-    participant Gitea
-    participant Bot as AI Gitea Bot
+    participant Git as Git Provider
+    participant Bot as AI Code Review Bot
     participant AI as AI Provider
 
-    User->>Gitea: Assign bot to issue
-    Gitea->>Bot: Webhook (issues, action: assigned)
-    Bot->>Gitea: Post "analyzing" comment
-    Bot->>Gitea: Fetch repository tree
+    User->>Git: Assign bot to issue
+    Git->>Bot: Webhook (issues, action: assigned)
+    Bot->>Git: Post "analyzing" comment
+    Bot->>Git: Fetch repository tree
     Bot->>AI: Ask which files are needed
     AI-->>Bot: List of requested files
-    Bot->>Gitea: Fetch file contents
+    Bot->>Git: Fetch file contents
     Bot->>AI: Send issue + file context
     AI-->>Bot: Implementation plan (JSON)
     
@@ -29,14 +29,14 @@ sequenceDiagram
         end
     end
     
-    Bot->>Gitea: Create feature branch
-    Bot->>Gitea: Commit file changes
-    Bot->>Gitea: Create pull request
-    Bot->>Gitea: Post success comment with PR link
+    Bot->>Git: Create feature branch
+    Bot->>Git: Commit file changes
+    Bot->>Git: Create pull request
+    Bot->>Git: Post success comment with PR link
 ```
 
-1. A user assigns the bot's Gitea user account to an issue
-2. Gitea sends an `issues` webhook with `action: "assigned"`
+1. A user assigns the bot's user account to an issue
+2. The Git provider sends an `issues` webhook with `action: "assigned"`
 3. The bot posts a progress comment on the issue
 4. The bot fetches the repository file tree and asks the AI which files are needed
 5. The bot fetches the requested file contents for context
@@ -56,15 +56,21 @@ The agent is **enabled by default**. If you need to disable it, set the followin
 export AGENT_ENABLED=false
 ```
 
-### 2. Configure Gitea Webhooks
+### 2. Configure Webhooks
 
-In addition to the existing webhook events (Pull Request, Issue Comment, etc.), enable the **Issues** event type in your Gitea webhook configuration:
+In addition to the existing webhook events (Pull Request, Issue Comment, etc.), enable the **Issues** event type in your webhook configuration:
 
+**For Gitea:**
 - Go to **Settings → Webhooks → Edit**
 - Check **Issues** under "Custom Events"
 - Save
 
-### 3. Required Gitea Permissions
+**For GitHub:**
+- Go to **Settings → Webhooks → Edit**
+- Under "Which events would you like to trigger this webhook?", ensure **Issues** is checked
+- Save
+
+### 3. Required Permissions
 
 The bot's API token needs **write** access to:
 - **Repository**: Create branches, commit files, create pull requests
