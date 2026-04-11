@@ -173,7 +173,7 @@ The bot is available as a Docker image on [Docker Hub](https://hub.docker.com/r/
 ```yaml
 services:
   app:
-    image: tmseidel/ai-gitea-bot:latest
+    image: tmseidel/ai-git-bot:latest
     ports:
       - "8080:8080"
     environment:
