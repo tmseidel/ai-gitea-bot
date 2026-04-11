@@ -3,6 +3,7 @@ package org.remus.giteabot.repository;
 import lombok.extern.slf4j.Slf4j;
 import org.remus.giteabot.admin.GitIntegration;
 import org.remus.giteabot.github.GitHubApiClient;
+import org.remus.giteabot.repository.model.RepositoryCredentials;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -23,12 +24,6 @@ public class GitHubProviderMetadata implements RepositoryProviderMetadata {
         return RepositoryType.GITHUB;
     }
 
-    @Override
-    public String getDefaultWebUrl() {
-        return DEFAULT_WEB_URL;
-    }
-
-    @Override
     public String resolveApiUrl(GitIntegration integration) {
         String url = integration.getUrl();
         if (url == null || url.isBlank()) {
@@ -50,7 +45,6 @@ public class GitHubProviderMetadata implements RepositoryProviderMetadata {
         return baseUrl + "/api/v3";
     }
 
-    @Override
     public String resolveCloneUrl(GitIntegration integration) {
         String url = integration.getUrl();
         if (url == null || url.isBlank()) {
@@ -70,7 +64,6 @@ public class GitHubProviderMetadata implements RepositoryProviderMetadata {
         return url;
     }
 
-    @Override
     public String buildAuthorizationHeader(String token) {
         return "Bearer " + token;
     }
@@ -90,10 +83,15 @@ public class GitHubProviderMetadata implements RepositoryProviderMetadata {
     }
 
     @Override
-    public RepositoryApiClient createClient(RestClient restClient, GitIntegration integration, String decryptedToken) {
+    public RepositoryCredentials createCredentials(GitIntegration integration, String decryptedToken) {
         String apiUrl = resolveApiUrl(integration);
         String cloneUrl = resolveCloneUrl(integration);
-        return new GitHubApiClient(restClient, apiUrl, cloneUrl, decryptedToken);
+        return RepositoryCredentials.of(apiUrl, cloneUrl, decryptedToken);
+    }
+
+    @Override
+    public RepositoryApiClient createClient(RestClient restClient, RepositoryCredentials credentials) {
+        return new GitHubApiClient(restClient, credentials);
     }
 }
 

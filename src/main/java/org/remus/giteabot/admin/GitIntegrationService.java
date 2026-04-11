@@ -1,6 +1,7 @@
 package org.remus.giteabot.admin;
 
 import lombok.extern.slf4j.Slf4j;
+import org.remus.giteabot.repository.RepositoryType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,9 +32,21 @@ public class GitIntegrationService {
     }
 
     public GitIntegration save(GitIntegration integration) {
+        // Set default URLs for providers that don't require user input
+        if (integration.getProviderType() == RepositoryType.GITHUB) {
+            integration.setUrl("https://github.com");
+        } else if (integration.getProviderType() == RepositoryType.BITBUCKET) {
+            integration.setUrl("https://bitbucket.org");
+        }
+
+        // Encrypt token if provided
         String token = integration.getToken();
         if (token != null && !token.isBlank()) {
             integration.setToken(encryptionService.encrypt(token));
+        } else if (integration.getId() != null) {
+            // Keep existing token if not provided on update
+            gitIntegrationRepository.findById(integration.getId())
+                    .ifPresent(existing -> integration.setToken(existing.getToken()));
         }
         return gitIntegrationRepository.save(integration);
     }

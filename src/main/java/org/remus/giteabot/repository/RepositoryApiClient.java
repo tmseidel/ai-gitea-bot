@@ -1,5 +1,6 @@
 package org.remus.giteabot.repository;
 
+import org.remus.giteabot.repository.model.RepositoryCredentials;
 import org.remus.giteabot.repository.model.Review;
 import org.remus.giteabot.repository.model.ReviewComment;
 
@@ -20,14 +21,23 @@ import java.util.Map;
  */
 public interface RepositoryApiClient {
 
+    /** Returns the credentials used by this client (base URL, clone URL, username, token). */
+    RepositoryCredentials getCredentials();
+
     /** Returns the API base URL of the repository provider (e.g. {@code https://api.github.com}). */
-    String getBaseUrl();
+    default String getBaseUrl() {
+        return getCredentials().baseUrl();
+    }
 
     /** Returns the web/clone URL of the repository provider (e.g. {@code https://github.com}). */
-    String getCloneUrl();
+    default String getCloneUrl() {
+        return getCredentials().cloneUrl();
+    }
 
     /** Returns the authentication token used by this client. */
-    String getToken();
+    default String getToken() {
+        return getCredentials().token();
+    }
 
     // ---- Pull request operations ----
 

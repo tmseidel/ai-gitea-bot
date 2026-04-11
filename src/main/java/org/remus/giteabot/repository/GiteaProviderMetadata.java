@@ -3,6 +3,7 @@ package org.remus.giteabot.repository;
 import lombok.extern.slf4j.Slf4j;
 import org.remus.giteabot.admin.GitIntegration;
 import org.remus.giteabot.gitea.GiteaApiClient;
+import org.remus.giteabot.repository.model.RepositoryCredentials;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -21,19 +22,12 @@ public class GiteaProviderMetadata implements RepositoryProviderMetadata {
         return RepositoryType.GITEA;
     }
 
-    @Override
-    public String getDefaultWebUrl() {
-        return DEFAULT_WEB_URL;
-    }
-
-    @Override
     public String resolveApiUrl(GitIntegration integration) {
         // Gitea's API is at the same base URL, just with /api/v1 paths
         // The RestClient uses the base URL and adds /api/v1 in each request
         return integration.getUrl();
     }
 
-    @Override
     public String resolveCloneUrl(GitIntegration integration) {
         String url = integration.getUrl();
         if (url == null || url.isBlank()) {
@@ -48,7 +42,6 @@ public class GiteaProviderMetadata implements RepositoryProviderMetadata {
         return url;
     }
 
-    @Override
     public String buildAuthorizationHeader(String token) {
         // Gitea uses "token <token>" format
         return "token " + token;
@@ -69,10 +62,15 @@ public class GiteaProviderMetadata implements RepositoryProviderMetadata {
     }
 
     @Override
-    public RepositoryApiClient createClient(RestClient restClient, GitIntegration integration, String decryptedToken) {
+    public RepositoryCredentials createCredentials(GitIntegration integration, String decryptedToken) {
         String apiUrl = resolveApiUrl(integration);
         String cloneUrl = resolveCloneUrl(integration);
-        return new GiteaApiClient(restClient, apiUrl, cloneUrl, decryptedToken);
+        return RepositoryCredentials.of(apiUrl, cloneUrl, decryptedToken);
+    }
+
+    @Override
+    public RepositoryApiClient createClient(RestClient restClient, RepositoryCredentials credentials) {
+        return new GiteaApiClient(restClient, credentials);
     }
 }
 

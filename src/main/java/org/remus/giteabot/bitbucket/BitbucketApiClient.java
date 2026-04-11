@@ -1,9 +1,9 @@
 package org.remus.giteabot.bitbucket;
 
 import lombok.extern.slf4j.Slf4j;
-import org.remus.giteabot.bitbucket.model.BitbucketReview;
 import org.remus.giteabot.bitbucket.model.BitbucketReviewComment;
 import org.remus.giteabot.repository.RepositoryApiClient;
+import org.remus.giteabot.repository.model.RepositoryCredentials;
 import org.remus.giteabot.repository.model.Review;
 import org.remus.giteabot.repository.model.ReviewComment;
 import org.springframework.core.ParameterizedTypeReference;
@@ -11,6 +11,7 @@ import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 import java.net.http.HttpClient;
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -25,45 +26,29 @@ import java.util.Map;
 public class BitbucketApiClient implements RepositoryApiClient {
 
     private final RestClient restClient;
-    private final String baseUrl;
-    private final String cloneUrl;
-    private final String token;
+    private final RepositoryCredentials credentials;
 
     /**
-     * Creates a BitbucketApiClient with the given RestClient, Bitbucket API base URL, and token.
+     * Creates a BitbucketApiClient with the given RestClient and credentials.
      *
-     * @param restClient pre-configured RestClient pointing at the Bitbucket API base URL
-     * @param baseUrl    the Bitbucket API base URL (e.g. {@code https://api.bitbucket.org/2.0})
-     * @param cloneUrl   the Bitbucket web URL for cloning (e.g. {@code https://bitbucket.org})
-     * @param token      the app password or OAuth access token
+     * @param restClient  pre-configured RestClient pointing at the Bitbucket API base URL
+     * @param credentials the repository credentials (base URL, clone URL, username, token)
      */
-    public BitbucketApiClient(RestClient restClient, String baseUrl, String cloneUrl, String token) {
+    public BitbucketApiClient(RestClient restClient, RepositoryCredentials credentials) {
         this.restClient = restClient;
-        this.baseUrl = baseUrl;
-        this.cloneUrl = cloneUrl;
-        this.token = token;
+        this.credentials = credentials;
     }
 
     @Override
-    public String getBaseUrl() {
-        return baseUrl;
-    }
-
-    @Override
-    public String getCloneUrl() {
-        return cloneUrl;
-    }
-
-    @Override
-    public String getToken() {
-        return token;
+    public RepositoryCredentials getCredentials() {
+        return credentials;
     }
 
     // ---- Pull request operations ----
 
     @Override
     public String getPullRequestDiff(String owner, String repo, Long pullNumber) {
-        log.info("Fetching diff for PR #{} in {}/{} from baseUrl={}", pullNumber, owner, repo, baseUrl);
+        log.info("Fetching diff for PR #{} in {}/{} from baseUrl={}", pullNumber, owner, repo, credentials.baseUrl());
         try {
             // Bitbucket Cloud diff endpoint returns a 302 redirect to the actual diff content.
             // We need an HttpClient that follows redirects and accepts text/plain.
@@ -73,7 +58,7 @@ public class BitbucketApiClient implements RepositoryApiClient {
 
             String authHeader = buildAuthorizationHeader();
             String diff = RestClient.builder()
-                    .baseUrl(baseUrl)
+                    .baseUrl(credentials.baseUrl())
                     .requestFactory(new JdkClientHttpRequestFactory(httpClient))
                     .defaultHeader("Authorization", authHeader)
                     .build()
@@ -92,23 +77,26 @@ public class BitbucketApiClient implements RepositoryApiClient {
     }
 
     /**
-     * Build the Authorization header based on the token format.
-     * - ATATT... tokens: Bearer authentication
-     * - username:password format: Basic authentication
-     * - Other tokens: Bearer authentication
+     * Build the Authorization header from the credentials.
+     * Uses Basic auth with username:token for App Passwords, or Bearer for API tokens.
      */
-    private String buildAuthorizationHeader() {
+    String buildAuthorizationHeader() {
+        String token = credentials.token();
         if (token == null || token.isBlank()) {
             return "";
         }
-        if (token.startsWith("ATATT")) {
-            return "Bearer " + token;
+
+        // App Password with separate username
+        if (credentials.hasUsername()) {
+            String combined = credentials.username() + ":" + token;
+            return "Basic " + Base64.getEncoder().encodeToString(combined.getBytes(StandardCharsets.UTF_8));
         }
+
+        // Token already contains username:password
         if (token.contains(":")) {
-            String encoded = Base64.getEncoder().encodeToString(
-                    token.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            return "Basic " + encoded;
+            return "Basic " + Base64.getEncoder().encodeToString(token.getBytes(StandardCharsets.UTF_8));
         }
+
         return "Bearer " + token;
     }
 
@@ -164,7 +152,6 @@ public class BitbucketApiClient implements RepositoryApiClient {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public List<Review> getReviews(String owner, String repo, Long pullNumber) {
         log.info("Fetching reviews (activity) for PR #{} in {}/{}", pullNumber, owner, repo);
         // Bitbucket Cloud uses activity endpoint; we look for approval activities.
@@ -189,7 +176,6 @@ public class BitbucketApiClient implements RepositoryApiClient {
     // ---- Repository operations ----
 
     @Override
-    @SuppressWarnings("unchecked")
     public String getDefaultBranch(String owner, String repo) {
         log.info("Fetching default branch for {}/{}", owner, repo);
         Map<String, Object> result = restClient.get()
@@ -264,7 +250,6 @@ public class BitbucketApiClient implements RepositoryApiClient {
         log.info("Creating/updating file {} on branch '{}' in {}/{}", path, branch, owner, repo);
         // Bitbucket uses the src endpoint with form data for file operations.
         // Use a multipart-like approach with the commit endpoint.
-        String base64Content = Base64.getEncoder().encodeToString(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         restClient.post()
                 .uri("/repositories/{workspace}/{repo}/src", owner, repo)
                 .header("Content-Type", "application/x-www-form-urlencoded")
@@ -290,7 +275,6 @@ public class BitbucketApiClient implements RepositoryApiClient {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public Long createPullRequest(String owner, String repo, String title, String body,
                                   String head, String base) {
         log.info("Creating pull request '{}' in {}/{} from {} to {}", title, owner, repo, head, base);
@@ -330,7 +314,6 @@ public class BitbucketApiClient implements RepositoryApiClient {
 
     // ---- Internal helpers ----
 
-    @SuppressWarnings("unchecked")
     private String resolveRef(String owner, String repo, String ref) {
         try {
             Map<String, Object> result = restClient.get()

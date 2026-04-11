@@ -36,13 +36,6 @@ public class GiteaClientFactory {
         this.providerRegistry = providerRegistry;
     }
 
-    /**
-     * Returns a {@link RestClient} configured for the given Git integration.
-     * Results are cached and re-created when the integration's updatedAt changes.
-     */
-    public RestClient getRestClient(GitIntegration integration) {
-        return getCachedClient(integration).restClient;
-    }
 
     /**
      * Returns a {@link RepositoryApiClient} for the given Git integration.
@@ -52,40 +45,6 @@ public class GiteaClientFactory {
         return getCachedClient(integration).apiClient;
     }
 
-    /**
-     * Returns the decrypted token for the given integration.
-     */
-    public String getDecryptedToken(GitIntegration integration) {
-        return gitIntegrationService.decryptToken(integration);
-    }
-
-    /**
-     * Returns the resolved API URL for the given integration.
-     */
-    public String getApiUrl(GitIntegration integration) {
-        RepositoryProviderMetadata provider = providerRegistry.getProvider(integration.getProviderType());
-        return provider.resolveApiUrl(integration);
-    }
-
-    /**
-     * Returns the clone/web URL for the given integration.
-     * This URL is used for git clone operations.
-     */
-    public String getCloneUrl(GitIntegration integration) {
-        RepositoryProviderMetadata provider = providerRegistry.getProvider(integration.getProviderType());
-        return provider.resolveCloneUrl(integration);
-    }
-
-    /**
-     * Returns the provider metadata for the given integration.
-     */
-    public RepositoryProviderMetadata getProviderMetadata(GitIntegration integration) {
-        return providerRegistry.getProvider(integration.getProviderType());
-    }
-
-    public void evict(Long integrationId) {
-        cache.remove(integrationId);
-    }
 
     private CachedClient getCachedClient(GitIntegration integration) {
         CachedClient cached = cache.get(integration.getId());
@@ -108,11 +67,12 @@ public class GiteaClientFactory {
 
         log.debug("Building clients for '{}': apiUrl={}, tokenLength={}",
                 integration.getName(),
-                provider.resolveApiUrl(integration),
+                integration.getUrl(),
                 decryptedToken != null ? decryptedToken.length() : 0);
 
         RestClient restClient = provider.buildRestClient(integration, decryptedToken);
-        RepositoryApiClient apiClient = provider.createClient(restClient, integration, decryptedToken);
+        var credentials = provider.createCredentials(integration, decryptedToken);
+        RepositoryApiClient apiClient = provider.createClient(restClient, credentials);
 
         return new CachedClient(integration.getUpdatedAt().toEpochMilli(), restClient, apiClient);
     }

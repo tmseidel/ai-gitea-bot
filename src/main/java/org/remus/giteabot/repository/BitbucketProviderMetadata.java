@@ -3,6 +3,7 @@ package org.remus.giteabot.repository;
 import lombok.extern.slf4j.Slf4j;
 import org.remus.giteabot.admin.GitIntegration;
 import org.remus.giteabot.bitbucket.BitbucketApiClient;
+import org.remus.giteabot.repository.model.RepositoryCredentials;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -16,14 +17,11 @@ import java.util.Base64;
  * <p>
  * Authentication methods supported:
  * <ul>
+ *   <li><b>App Passwords</b>: Requires username and app password. The username is stored
+ *       separately in the GitIntegration, and combined with the token for Basic authentication.</li>
  *   <li><b>API Tokens (new)</b>: Tokens starting with "ATATT" use Bearer authentication.
- *       Enter just the token in the Token field.</li>
- *   <li><b>App Passwords (legacy)</b>: For tokens containing ":", use Basic authentication
- *       with format "username:app_password".</li>
+ *       No username required.</li>
  * </ul>
- * <p>
- * Note: As of September 2025, Bitbucket Cloud has replaced App Passwords with API Tokens.
- * Existing App Passwords will be disabled on June 9, 2026.
  */
 @Slf4j
 @Component
@@ -37,12 +35,6 @@ public class BitbucketProviderMetadata implements RepositoryProviderMetadata {
         return RepositoryType.BITBUCKET;
     }
 
-    @Override
-    public String getDefaultWebUrl() {
-        return DEFAULT_WEB_URL;
-    }
-
-    @Override
     public String resolveApiUrl(GitIntegration integration) {
         String url = integration.getUrl();
         if (url == null || url.isBlank()) {
@@ -66,7 +58,6 @@ public class BitbucketProviderMetadata implements RepositoryProviderMetadata {
         return baseUrl + "/rest/api/1.0";
     }
 
-    @Override
     public String resolveCloneUrl(GitIntegration integration) {
         String url = integration.getUrl();
         if (url == null || url.isBlank()) {
@@ -87,7 +78,6 @@ public class BitbucketProviderMetadata implements RepositoryProviderMetadata {
         return url;
     }
 
-    @Override
     public String buildAuthorizationHeader(String token) {
         if (token == null || token.isBlank()) {
             log.warn("Bitbucket token is empty or null");
@@ -100,7 +90,7 @@ public class BitbucketProviderMetadata implements RepositoryProviderMetadata {
             return "Bearer " + token;
         }
 
-        // Legacy App Passwords use Basic authentication with username:password format
+        // Token with username:password format uses Basic authentication
         if (token.contains(":")) {
             log.debug("Using Basic authentication for App Password (username:password format)");
             String encoded = Base64.getEncoder().encodeToString(token.getBytes(StandardCharsets.UTF_8));
@@ -108,7 +98,35 @@ public class BitbucketProviderMetadata implements RepositoryProviderMetadata {
         }
 
         // For tokens without ":" that don't start with ATATT, assume Bearer
-        // This handles other OAuth2 access tokens
+        log.debug("Using Bearer authentication (token format not recognized as Basic auth)");
+        return "Bearer " + token;
+    }
+
+    /**
+     * Build the Authorization header using credentials (supports username for App Passwords).
+     */
+    public String buildAuthorizationHeader(RepositoryCredentials credentials) {
+        String token = credentials.token();
+        if (token == null || token.isBlank()) {
+            log.warn("Bitbucket token is empty or null");
+            return "";
+        }
+        // App Password with separate username
+        if (credentials.hasUsername()) {
+            log.debug("Using Basic authentication with username '{}' and App Password", credentials.username());
+            String combined = credentials.username() + ":" + token;
+            String encoded = Base64.getEncoder().encodeToString(combined.getBytes(StandardCharsets.UTF_8));
+            return "Basic " + encoded;
+        }
+
+        // Token already contains username:password
+        if (token.contains(":")) {
+            log.debug("Using Basic authentication for App Password (username:password format in token)");
+            String encoded = Base64.getEncoder().encodeToString(token.getBytes(StandardCharsets.UTF_8));
+            return "Basic " + encoded;
+        }
+
+        // For tokens without ":" that don't start with ATATT, assume Bearer
         log.debug("Using Bearer authentication (token format not recognized as Basic auth)");
         return "Bearer " + token;
     }
@@ -116,7 +134,8 @@ public class BitbucketProviderMetadata implements RepositoryProviderMetadata {
     @Override
     public RestClient buildRestClient(GitIntegration integration, String decryptedToken) {
         String apiUrl = resolveApiUrl(integration);
-        String authHeader = buildAuthorizationHeader(decryptedToken);
+        RepositoryCredentials credentials = createCredentials(integration, decryptedToken);
+        String authHeader = buildAuthorizationHeader(credentials);
 
         log.debug("Building Bitbucket RestClient: apiUrl={}", apiUrl);
 
@@ -128,9 +147,15 @@ public class BitbucketProviderMetadata implements RepositoryProviderMetadata {
     }
 
     @Override
-    public RepositoryApiClient createClient(RestClient restClient, GitIntegration integration, String decryptedToken) {
+    public RepositoryCredentials createCredentials(GitIntegration integration, String decryptedToken) {
         String apiUrl = resolveApiUrl(integration);
         String cloneUrl = resolveCloneUrl(integration);
-        return new BitbucketApiClient(restClient, apiUrl, cloneUrl, decryptedToken);
+        String username = integration.getUsername();
+        return RepositoryCredentials.of(apiUrl, cloneUrl, username, decryptedToken);
+    }
+
+    @Override
+    public RepositoryApiClient createClient(RestClient restClient, RepositoryCredentials credentials) {
+        return new BitbucketApiClient(restClient, credentials);
     }
 }

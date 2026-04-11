@@ -2,55 +2,34 @@
 
 This guide explains how to configure the AI Code Review Bot to work with Bitbucket Cloud.
 
+## Limitations
+
+> **⚠️ Agent feature not available**: The code-creation agent (automatic issue implementation) is **not available** for Bitbucket Cloud due to Atlassian's end-of-life of Bitbucket Pipelines' internal tasks. Only code review on pull requests and bot commands in PR comments are supported.
+
 ## Prerequisites
 
 - A Bitbucket Cloud account
-- Access to create API tokens in Bitbucket
 - A repository where you want to enable the bot
 
 ## Step 1: Create an API Token
-
-> **Note**: As of September 2025, Bitbucket Cloud has replaced App Passwords with API Tokens.
-> Existing App Passwords will be disabled on June 9, 2026.
 
 1. Go to your Atlassian account settings: https://id.atlassian.com/manage-profile/security/api-tokens
 2. Click **Create API token**
 3. Give it a label (e.g., "AI Code Review Bot")
 4. Click **Create**
-5. **Important**: Copy the generated token immediately - you won't be able to see it again!
-
-The token will look like: `ATATT3xFfGF0CNndTrZZ...`
-
-### Required Scopes
-
-When creating the API token, ensure it has access to:
-- Read repositories
-- Read and write pull requests
+5. **Important**: Copy the generated token immediately — you won't be able to see it again!
 
 ## Step 2: Configure the Git Integration
 
-In the bot's admin UI, create a new Git Integration with the following settings:
+In the bot's admin UI, create a new Git Integration:
 
-| Field | Value |
-|-------|-------|
-| **Name** | e.g., "Bitbucket Cloud" |
-| **Provider Type** | BITBUCKET |
-| **URL** | `https://bitbucket.org` or `https://api.bitbucket.org/2.0` |
-| **Token** | Your API token (starting with `ATATT...`) |
+1. Select **Provider Type**: `BITBUCKET`
+2. Enter your **Bitbucket username** (this is your Atlassian account username, visible at https://bitbucket.org/account/settings/)
+3. Enter the **App Password / API Token** you created in Step 1
 
-### Token Format
+The bot uses Basic authentication (`username:token`) as recommended by Atlassian.
 
-The bot supports two authentication methods:
-
-1. **API Tokens (recommended)**: Just paste the token starting with `ATATT...`
-   ```
-   ATATT3xFfGF0CNndTrZZuJdJfXcmNmuF2RQK9fTUUTRhThM...
-   ```
-
-2. **Legacy App Passwords** (deprecated, will stop working June 2026):
-   ```
-   username:app_password
-   ```
+> **Note**: The URL is set automatically to `https://bitbucket.org` — you don't need to configure it.
 
 ## Step 3: Create a Bot
 
@@ -58,7 +37,7 @@ Create a new Bot in the admin UI and link it to:
 - Your Bitbucket Git Integration
 - Your AI Integration (e.g., Anthropic)
 
-Note the **Webhook Secret** that is generated - you'll need this for the next step.
+Note the **Webhook Secret** that is generated — you'll need this for the next step.
 
 ## Step 4: Configure the Webhook in Bitbucket
 
@@ -83,15 +62,13 @@ Note the **Webhook Secret** that is generated - you'll need this for the next st
 
 ## Troubleshooting
 
-### Error: "401 Unauthorized: Token is invalid"
-- Check that your token is in the format `username:app_password`
-- Verify the app password hasn't expired
-- Ensure the app password has the required permissions
+### Error: "No diff found for PR"
+- The Bitbucket diff endpoint returns a redirect. Make sure your bot deployment can follow HTTP redirects.
+- Verify the token and username are correct.
 
-### Error: "400 Bad Request: Invalid Authorization header"
-- The token format is incorrect
-- Make sure the token is `username:app_password` (with a colon)
-- Don't include any extra spaces or characters
+### Error: "401 Unauthorized"
+- Verify your username is correct (check at https://bitbucket.org/account/settings/)
+- Regenerate the API token and update the Git Integration
 
 ### Error: "Webhook ignored"
 - Check that the webhook URL includes the correct webhook secret
@@ -102,9 +79,9 @@ Note the **Webhook Secret** that is generated - you'll need this for the next st
 - The webhook secret in the URL doesn't match any configured bot
 - Verify the webhook URL in Bitbucket matches your bot's secret
 
-## App Password Permissions
+## Required Permissions
 
-The minimum required permissions for the App Password are:
+The minimum required permissions for the API token:
 
 | Permission | Required For |
 |------------|--------------|
@@ -112,7 +89,4 @@ The minimum required permissions for the App Password are:
 | Pull requests: Read | Reading PR information |
 | Pull requests: Write | Posting review comments |
 
-For agent features (implementing issues), you may also need:
-- Repository: Write (for creating branches and commits)
-- Pull requests: Write (for creating PRs)
 

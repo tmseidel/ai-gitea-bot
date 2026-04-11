@@ -27,6 +27,13 @@ public class GitIntegration {
     @Column(nullable = false)
     private String url;
 
+    /**
+     * Username for authentication (required for Bitbucket Cloud with App Passwords).
+     * For other providers, this field may be optional or unused.
+     */
+    @Column
+    private String username;
+
     @Column(nullable = false)
     private String token;
 

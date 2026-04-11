@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.remus.giteabot.github.model.GitHubReview;
 import org.remus.giteabot.github.model.GitHubReviewComment;
 import org.remus.giteabot.repository.RepositoryApiClient;
+import org.remus.giteabot.repository.model.RepositoryCredentials;
 import org.remus.giteabot.repository.model.Review;
 import org.remus.giteabot.repository.model.ReviewComment;
 import org.springframework.core.ParameterizedTypeReference;
@@ -21,47 +22,31 @@ import java.util.Map;
 public class GitHubApiClient implements RepositoryApiClient {
 
     private final RestClient restClient;
-    private final String baseUrl;
-    private final String cloneUrl;
-    private final String token;
+    private final RepositoryCredentials credentials;
 
     /**
-     * Creates a GitHubApiClient with the given RestClient, GitHub base URL, and token.
+     * Creates a GitHubApiClient with the given RestClient and credentials.
      *
-     * @param restClient pre-configured RestClient pointing at the GitHub API base URL
-     * @param baseUrl    the GitHub API base URL (e.g. {@code https://api.github.com})
-     * @param cloneUrl   the GitHub web URL for cloning (e.g. {@code https://github.com})
-     * @param token      the personal access token or app token
+     * @param restClient  pre-configured RestClient pointing at the GitHub API base URL
+     * @param credentials the repository credentials (base URL, clone URL, token)
      */
-    public GitHubApiClient(RestClient restClient, String baseUrl, String cloneUrl, String token) {
+    public GitHubApiClient(RestClient restClient, RepositoryCredentials credentials) {
         this.restClient = restClient;
-        this.baseUrl = baseUrl;
-        this.cloneUrl = cloneUrl;
-        this.token = token;
+        this.credentials = credentials;
     }
 
     @Override
-    public String getBaseUrl() {
-        return baseUrl;
-    }
-
-    @Override
-    public String getCloneUrl() {
-        return cloneUrl;
-    }
-
-    @Override
-    public String getToken() {
-        return token;
+    public RepositoryCredentials getCredentials() {
+        return credentials;
     }
 
     // ---- Pull request operations ----
 
     @Override
     public String getPullRequestDiff(String owner, String repo, Long pullNumber) {
-        log.info("Fetching diff for PR #{} in {}/{} from baseUrl={}", pullNumber, owner, repo, baseUrl);
-        log.debug("Token present: {}, tokenLength: {}", token != null && !token.isBlank(),
-                token != null ? token.length() : 0);
+        log.info("Fetching diff for PR #{} in {}/{} from baseUrl={}", pullNumber, owner, repo, credentials.baseUrl());
+        log.debug("Token present: {}, tokenLength: {}", credentials.token() != null && !credentials.token().isBlank(),
+                credentials.token() != null ? credentials.token().length() : 0);
         return restClient.get()
                 .uri("/repos/{owner}/{repo}/pulls/{pull_number}", owner, repo, pullNumber)
                 .header("Accept", "application/vnd.github.v3.diff")
@@ -142,7 +127,6 @@ public class GitHubApiClient implements RepositoryApiClient {
     // ---- Repository operations ----
 
     @Override
-    @SuppressWarnings("unchecked")
     public String getDefaultBranch(String owner, String repo) {
         log.info("Fetching default branch for {}/{}", owner, repo);
         Map<String, Object> repoInfo = restClient.get()
@@ -170,7 +154,6 @@ public class GitHubApiClient implements RepositoryApiClient {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public String getFileContent(String owner, String repo, String path, String ref) {
         log.info("Fetching file content for {}/{}/{} at ref={}", owner, repo, path, ref);
         Map<String, Object> result = restClient.get()
@@ -185,7 +168,6 @@ public class GitHubApiClient implements RepositoryApiClient {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public String getFileSha(String owner, String repo, String path, String ref) {
         log.info("Fetching file SHA for {}/{}/{} at ref={}", owner, repo, path, ref);
         Map<String, Object> result = restClient.get()
@@ -199,7 +181,6 @@ public class GitHubApiClient implements RepositoryApiClient {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public void createBranch(String owner, String repo, String branchName, String fromRef) {
         log.info("Creating branch '{}' from '{}' in {}/{}", branchName, fromRef, owner, repo);
         // GitHub requires the SHA of the commit, not a branch name.
@@ -248,7 +229,6 @@ public class GitHubApiClient implements RepositoryApiClient {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public Long createPullRequest(String owner, String repo, String title, String body,
                                   String head, String base) {
         log.info("Creating pull request '{}' in {}/{} from {} to {}", title, owner, repo, head, base);
@@ -281,7 +261,6 @@ public class GitHubApiClient implements RepositoryApiClient {
 
     // ---- Internal helpers ----
 
-    @SuppressWarnings("unchecked")
     private String resolveRef(String owner, String repo, String ref) {
         Map<String, Object> result = restClient.get()
                 .uri("/repos/{owner}/{repo}/git/ref/heads/{ref}", owner, repo, ref)
