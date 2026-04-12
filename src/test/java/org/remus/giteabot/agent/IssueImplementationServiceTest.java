@@ -465,29 +465,6 @@ class IssueImplementationServiceTest {
     }
 
     @Test
-    void fetchRelevantFileContents_includesMentionedFiles() {
-        List<Map<String, Object>> tree = List.of(
-                Map.of("type", "blob", "path", "src/Main.java"),
-                Map.of("type", "blob", "path", "pom.xml"),
-                Map.of("type", "blob", "path", "README.md"),
-                Map.of("type", "blob", "path", "src/Other.java")
-        );
-
-        when(repositoryClient.getFileContent("o", "r", "pom.xml", "main")).thenReturn("<pom/>");
-        when(repositoryClient.getFileContent("o", "r", "README.md", "main")).thenReturn("# Readme");
-        when(repositoryClient.getFileContent("o", "r", "src/Main.java", "main")).thenReturn("class Main {}");
-
-        String result = service.fetchRelevantFileContents("o", "r", "main", tree,
-                "Fix src/Main.java", "Update the main class");
-
-        assertThat(result).contains("src/Main.java");
-        assertThat(result).contains("pom.xml");
-        assertThat(result).contains("README.md");
-        // src/Other.java is not mentioned in the issue, not a config file
-        assertThat(result).doesNotContain("src/Other.java");
-    }
-
-    @Test
     void handleIssueComment_multipleFileRequestRounds_fetchesAllRequestedFiles() {
         WebhookPayload payload = createCommentPayload("Please also update the config");
 

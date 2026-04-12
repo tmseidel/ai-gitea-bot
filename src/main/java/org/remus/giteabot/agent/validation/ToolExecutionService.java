@@ -1,6 +1,7 @@
 package org.remus.giteabot.agent.validation;
 
 import lombok.extern.slf4j.Slf4j;
+import org.remus.giteabot.agent.DiffApplyService;
 import org.remus.giteabot.agent.model.FileChange;
 import org.remus.giteabot.config.AgentConfigProperties;
 import org.springframework.stereotype.Service;
@@ -20,9 +21,11 @@ import java.util.concurrent.TimeUnit;
 public class ToolExecutionService {
 
     private final AgentConfigProperties agentConfig;
+    private final DiffApplyService diffApplyService;
 
-    public ToolExecutionService(AgentConfigProperties agentConfig) {
+    public ToolExecutionService(AgentConfigProperties agentConfig, DiffApplyService diffApplyService) {
         this.agentConfig = agentConfig;
+        this.diffApplyService = diffApplyService;
     }
 
     /**
@@ -65,15 +68,7 @@ public class ToolExecutionService {
 
             // Apply file changes
             for (FileChange change : fileChanges) {
-                Path filePath = tempDir.resolve(change.getPath());
-
-                switch (change.getOperation()) {
-                    case CREATE, UPDATE -> {
-                        Files.createDirectories(filePath.getParent());
-                        Files.writeString(filePath, change.getContent());
-                    }
-                    case DELETE -> Files.deleteIfExists(filePath);
-                }
+                applyFileChangeToWorkspace(tempDir, change);
             }
 
             return WorkspaceResult.success(tempDir);
@@ -98,6 +93,44 @@ public class ToolExecutionService {
 
         public static WorkspaceResult failure(String error) {
             return new WorkspaceResult(false, null, error);
+        }
+    }
+
+    /**
+     * Applies a single file change to the workspace directory.
+     * For diff-based UPDATE operations, reads the existing file, applies the diff,
+     * and writes the result. For CREATE or full-content UPDATE operations, writes
+     * the content directly.
+     *
+     * @param workspaceDir The workspace directory (cloned repo)
+     * @param change       The file change to apply
+     * @throws IOException if a file operation fails
+     */
+    public void applyFileChangeToWorkspace(Path workspaceDir, FileChange change) throws IOException {
+        Path filePath = workspaceDir.resolve(change.getPath());
+
+        switch (change.getOperation()) {
+            case CREATE -> {
+                Files.createDirectories(filePath.getParent());
+                Files.writeString(filePath, change.getContent());
+            }
+            case UPDATE -> {
+                Files.createDirectories(filePath.getParent());
+                if (change.isDiffBased()) {
+                    // Read existing file, apply diff, write result
+                    if (Files.exists(filePath)) {
+                        String existingContent = Files.readString(filePath);
+                        String newContent = diffApplyService.applyDiff(existingContent, change.getDiff());
+                        Files.writeString(filePath, newContent);
+                    } else {
+                        log.warn("Diff-based update for {} but file does not exist in workspace, skipping", change.getPath());
+                    }
+                } else {
+                    // Full content replacement
+                    Files.writeString(filePath, change.getContent());
+                }
+            }
+            case DELETE -> Files.deleteIfExists(filePath);
         }
     }
 

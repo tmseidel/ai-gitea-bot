@@ -339,15 +339,8 @@ public class IssueImplementationService {
                     } else {
                         // Update existing workspace with new file changes
                         for (FileChange change : plan.getFileChanges()) {
-                            Path filePath = workspaceDir.resolve(change.getPath());
                             try {
-                                switch (change.getOperation()) {
-                                    case CREATE, UPDATE -> {
-                                        java.nio.file.Files.createDirectories(filePath.getParent());
-                                        java.nio.file.Files.writeString(filePath, change.getContent());
-                                    }
-                                    case DELETE -> java.nio.file.Files.deleteIfExists(filePath);
-                                }
+                                toolExecutionService.applyFileChangeToWorkspace(workspaceDir, change);
                             } catch (Exception e) {
                                 log.warn("Failed to update workspace file {}: {}", change.getPath(), e.getMessage());
                             }
@@ -601,15 +594,8 @@ public class IssueImplementationService {
                 } else {
                     // Update existing workspace with new file changes
                     for (FileChange change : currentPlan.getFileChanges()) {
-                        Path filePath = workspaceDir.resolve(change.getPath());
                         try {
-                            switch (change.getOperation()) {
-                                case CREATE, UPDATE -> {
-                                    java.nio.file.Files.createDirectories(filePath.getParent());
-                                    java.nio.file.Files.writeString(filePath, change.getContent());
-                                }
-                                case DELETE -> java.nio.file.Files.deleteIfExists(filePath);
-                            }
+                            toolExecutionService.applyFileChangeToWorkspace(workspaceDir, change);
                         } catch (Exception e) {
                             log.warn("Failed to update workspace file {}: {}", change.getPath(), e.getMessage());
                         }
@@ -1251,133 +1237,6 @@ public class IssueImplementationService {
             count++;
         }
         return sb.toString();
-    }
-
-    String fetchRelevantFileContents(String owner, String repo, String ref,
-                                             List<Map<String, Object>> tree,
-                                             String issueTitle, String issueBody) {
-        // Build a map of all file paths for quick lookup
-        Map<String, Boolean> allPaths = new java.util.HashMap<>();
-        for (Map<String, Object> entry : tree) {
-            String path = (String) entry.getOrDefault("path", "");
-            String type = (String) entry.getOrDefault("type", "blob");
-            if ("blob".equals(type)) {
-                allPaths.put(path, true);
-            }
-        }
-
-        // Pick source files mentioned in the issue or common configuration files
-        List<String> relevantPaths = new ArrayList<>();
-        java.util.Set<String> relevantPackages = new java.util.HashSet<>();
-        String issueLower = (issueTitle + " " + (issueBody != null ? issueBody : "")).toLowerCase();
-
-        for (Map<String, Object> entry : tree) {
-            String path = (String) entry.getOrDefault("path", "");
-            String type = (String) entry.getOrDefault("type", "blob");
-            if (!"blob".equals(type)) continue;
-
-            // Include files explicitly mentioned in the issue
-            if (issueLower.contains(path.toLowerCase())) {
-                relevantPaths.add(path);
-                // Track the package of mentioned Java files
-                if (path.endsWith(".java")) {
-                    String packagePath = getPackagePath(path);
-                    if (packagePath != null) {
-                        relevantPackages.add(packagePath);
-                    }
-                }
-                continue;
-            }
-
-            // Check if any part of the path is mentioned (e.g., "Task" matches "Task.java")
-            String fileName = path.substring(path.lastIndexOf('/') + 1);
-            String fileNameWithoutExt = fileName.contains(".")
-                    ? fileName.substring(0, fileName.lastIndexOf('.'))
-                    : fileName;
-            if (fileNameWithoutExt.length() > 3 && issueLower.contains(fileNameWithoutExt.toLowerCase())) {
-                relevantPaths.add(path);
-                if (path.endsWith(".java")) {
-                    String packagePath = getPackagePath(path);
-                    if (packagePath != null) {
-                        relevantPackages.add(packagePath);
-                    }
-                }
-                continue;
-            }
-
-            // Include key configuration files
-            if (path.endsWith("pom.xml") || path.endsWith("build.gradle")
-                    || path.equals("README.md") || path.endsWith("application.properties")) {
-                relevantPaths.add(path);
-            }
-        }
-
-        // Add sibling files from relevant packages (for context on existing code structure)
-        for (String packagePath : relevantPackages) {
-            for (String path : allPaths.keySet()) {
-                if (path.startsWith(packagePath) && path.endsWith(".java") && !relevantPaths.contains(path)) {
-                    relevantPaths.add(path);
-                }
-            }
-        }
-
-        // Also include common domain/model/entity files that might define base classes
-        for (String path : allPaths.keySet()) {
-            if (path.endsWith(".java") && !relevantPaths.contains(path)) {
-                String lower = path.toLowerCase();
-                // Include likely interface, base class, or configuration files
-                if (lower.contains("/domain/") || lower.contains("/model/") ||
-                    lower.contains("/entity/") || lower.contains("/config/") ||
-                    lower.contains("/dto/") || lower.contains("/repository/") ||
-                    lower.contains("/service/") || lower.contains("/controller/")) {
-                    // Check if file name matches something in the issue
-                    String fileName = path.substring(path.lastIndexOf('/') + 1);
-                    String baseName = fileName.replace(".java", "").toLowerCase();
-                    if (issueLower.contains(baseName)) {
-                        relevantPaths.add(path);
-                    }
-                }
-            }
-        }
-
-        // Limit to a reasonable number but higher than before
-        if (relevantPaths.size() > 30) {
-            relevantPaths = relevantPaths.subList(0, 30);
-        }
-
-        log.debug("Fetching {} relevant files for context: {}", relevantPaths.size(), relevantPaths);
-
-        StringBuilder sb = new StringBuilder();
-        int totalChars = 0;
-        for (String path : relevantPaths) {
-            if (totalChars > MAX_FILE_CONTENT_CHARS) {
-                sb.append("\n(File context truncated due to size limits)\n");
-                break;
-            }
-            try {
-                String content = repositoryClient.getFileContent(owner, repo, path, ref);
-                if (content != null && !content.isEmpty()) {
-                    sb.append("\n--- File: ").append(path).append(" ---\n");
-                    sb.append(content).append("\n");
-                    totalChars += content.length();
-                }
-            } catch (Exception e) {
-                log.debug("Could not fetch file content for {}: {}", path, e.getMessage());
-            }
-        }
-        return sb.toString();
-    }
-
-    /**
-     * Extracts the package path from a Java file path.
-     * E.g., "src/main/java/com/example/task/domain/Task.java" -> "src/main/java/com/example/task/domain/"
-     */
-    private String getPackagePath(String filePath) {
-        int lastSlash = filePath.lastIndexOf('/');
-        if (lastSlash > 0) {
-            return filePath.substring(0, lastSlash + 1);
-        }
-        return null;
     }
 
 
