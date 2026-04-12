@@ -8,6 +8,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.remus.giteabot.agent.DiffApplyService;
 import org.remus.giteabot.agent.session.AgentSessionService;
 import org.remus.giteabot.agent.validation.ToolExecutionService;
+import org.remus.giteabot.agent.validation.WorkspaceService;
 import org.remus.giteabot.config.AgentConfigProperties;
 import org.remus.giteabot.config.PromptService;
 import org.remus.giteabot.config.ReviewConfigProperties;
@@ -41,6 +42,9 @@ class BotWebhookServiceTest {
     private ToolExecutionService toolExecutionService;
 
     @Mock
+    private WorkspaceService workspaceService;
+
+    @Mock
     private DiffApplyService diffApplyService;
 
     @Mock
@@ -52,7 +56,7 @@ class BotWebhookServiceTest {
     void setUp() {
         botWebhookService = new BotWebhookService(aiClientFactory, giteaClientFactory,
                 promptService, sessionService, agentConfig, new ReviewConfigProperties(),
-                agentSessionService, toolExecutionService, diffApplyService, botService);
+                agentSessionService, toolExecutionService, workspaceService, diffApplyService, botService);
     }
 
     @Test

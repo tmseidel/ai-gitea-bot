@@ -9,12 +9,15 @@ import org.remus.giteabot.agent.model.ImplementationPlan;
 import org.remus.giteabot.agent.session.AgentSession;
 import org.remus.giteabot.agent.session.AgentSessionService;
 import org.remus.giteabot.agent.validation.ToolExecutionService;
+import org.remus.giteabot.agent.validation.ToolResult;
+import org.remus.giteabot.agent.validation.WorkspaceResult;
+import org.remus.giteabot.agent.validation.WorkspaceService;
 import org.remus.giteabot.ai.AiClient;
 import org.remus.giteabot.ai.AiMessage;
 import org.remus.giteabot.config.AgentConfigProperties;
 import org.remus.giteabot.config.PromptService;
-import org.remus.giteabot.repository.RepositoryApiClient;
 import org.remus.giteabot.gitea.model.WebhookPayload;
+import org.remus.giteabot.repository.RepositoryApiClient;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
@@ -49,6 +52,7 @@ public class IssueImplementationService {
     private final AgentConfigProperties agentConfig;
     private final AgentSessionService sessionService;
     private final ToolExecutionService toolExecutionService;
+    private final WorkspaceService workspaceService;
     private final DiffApplyService diffApplyService;
     private final ObjectMapper objectMapper;
 
@@ -56,6 +60,7 @@ public class IssueImplementationService {
                                       AiClient aiClient, PromptService promptService,
                                       AgentConfigProperties agentConfig, AgentSessionService sessionService,
                                       ToolExecutionService toolExecutionService,
+                                      WorkspaceService workspaceService,
                                       DiffApplyService diffApplyService) {
         this.repositoryClient = repositoryClient;
         this.aiClient = aiClient;
@@ -63,6 +68,7 @@ public class IssueImplementationService {
         this.agentConfig = agentConfig;
         this.sessionService = sessionService;
         this.toolExecutionService = toolExecutionService;
+        this.workspaceService = workspaceService;
         this.diffApplyService = diffApplyService;
         this.objectMapper = new ObjectMapper();
     }
@@ -264,6 +270,7 @@ public class IssueImplementationService {
         int toolExecutions = 0;
         Path workspaceDir = null;
         ImplementationPlan lastValidPlan = null;
+        List<String> failedDiffPaths = new ArrayList<>();
 
         try {
             for (int attempt = 1; attempt <= maxRetries; attempt++) {
@@ -327,7 +334,7 @@ public class IssueImplementationService {
 
                     // Prepare workspace if not already done
                     if (workspaceDir == null) {
-                        ToolExecutionService.WorkspaceResult workspaceResult = toolExecutionService.prepareWorkspace(owner, repo, defaultBranch, plan.getFileChanges(), repositoryClient.getCloneUrl(), repositoryClient.getToken());
+                        WorkspaceResult workspaceResult = workspaceService.prepareWorkspace(owner, repo, defaultBranch, plan.getFileChanges(), repositoryClient.getCloneUrl(), repositoryClient.getToken());
                         if (!workspaceResult.success()) {
                             log.error("Failed to prepare workspace for validation: {}", workspaceResult.error());
                             // Post error as comment so it's visible
@@ -336,18 +343,17 @@ public class IssueImplementationService {
                             return plan; // Return plan without validation
                         }
                         workspaceDir = workspaceResult.workspacePath();
+                        if (workspaceResult.hasFailedDiffs()) {
+                            failedDiffPaths.addAll(workspaceResult.failedDiffs());
+                        }
                     } else {
                         // Update existing workspace with new file changes
                         for (FileChange change : plan.getFileChanges()) {
-                            Path filePath = workspaceDir.resolve(change.getPath());
                             try {
-                                switch (change.getOperation()) {
-                                    case CREATE, UPDATE -> {
-                                        java.nio.file.Files.createDirectories(filePath.getParent());
-                                        java.nio.file.Files.writeString(filePath, change.getContent());
-                                    }
-                                    case DELETE -> java.nio.file.Files.deleteIfExists(filePath);
-                                }
+                                workspaceService.applyFileChangeToWorkspace(workspaceDir, change);
+                            } catch (DiffApplyService.DiffApplyException e) {
+                                log.warn("Diff application failed for workspace file {}: {}", change.getPath(), e.getMessage());
+                                failedDiffPaths.add(change.getPath());
                             } catch (Exception e) {
                                 log.warn("Failed to update workspace file {}: {}", change.getPath(), e.getMessage());
                             }
@@ -359,7 +365,7 @@ public class IssueImplementationService {
                     log.info("AI requested tool execution: {} {}", toolRequest.getTool(),
                             toolRequest.getArgs() != null ? String.join(" ", toolRequest.getArgs()) : "");
 
-                    ToolExecutionService.ToolResult result = toolExecutionService.executeTool(
+                    ToolResult result = toolExecutionService.executeTool(
                             workspaceDir, toolRequest.getTool(), toolRequest.getArgs());
 
                     // Build feedback message for AI
@@ -378,7 +384,9 @@ public class IssueImplementationService {
                     // IMPORTANT: Include all previously successful file changes in the feedback
                     // so the AI knows which changes to preserve when fixing
                     String previousChangesInfo = buildPreviousChangesInfo(lastValidPlan);
-                    String toolFeedbackWithContext = toolFeedback + previousChangesInfo;
+                    String diffFailureInfo = buildDiffFailureFeedback(failedDiffPaths);
+                    String toolFeedbackWithContext = toolFeedback + previousChangesInfo + diffFailureInfo;
+                    failedDiffPaths.clear();
 
                     conversationHistory.add(AiMessage.builder().role("user").content(currentMessage).build());
                     conversationHistory.add(AiMessage.builder().role("assistant").content(aiResponse).build());
@@ -426,12 +434,12 @@ public class IssueImplementationService {
         } finally {
             // Clean up workspace
             if (workspaceDir != null) {
-                toolExecutionService.cleanupWorkspace(workspaceDir);
+                workspaceService.cleanupWorkspace(workspaceDir);
             }
         }
     }
 
-    private String buildToolFeedback(ImplementationPlan.ToolRequest toolRequest, ToolExecutionService.ToolResult result) {
+    private String buildToolFeedback(ImplementationPlan.ToolRequest toolRequest, ToolResult result) {
         StringBuilder sb = new StringBuilder();
         sb.append("## Tool Execution Result\n\n");
         sb.append("**Command**: `").append(toolRequest.getTool());
@@ -456,9 +464,32 @@ public class IssueImplementationService {
         return sb.toString();
     }
 
+    /**
+     * Builds feedback for the AI about files where diff application failed.
+     * Instructs the AI to provide the complete file content instead of a diff.
+     *
+     * @param failedDiffPaths List of file paths where diff application failed
+     * @return Feedback string, or empty string if no diffs failed
+     */
+    private String buildDiffFailureFeedback(List<String> failedDiffPaths) {
+        if (failedDiffPaths == null || failedDiffPaths.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("\n\n## ⚠️ Diff Application Failed\n\n");
+        sb.append("The following file(s) could not be updated because the diff did not match the current file content:\n\n");
+        for (String path : failedDiffPaths) {
+            sb.append("- `").append(path).append("`\n");
+        }
+        sb.append("\n**IMPORTANT**: For these files, do NOT use a diff. Instead, provide the **complete file content** ");
+        sb.append("in the `content` field of the `fileChanges` entry (and omit the `diff` field). ");
+        sb.append("This ensures the changes are applied correctly.\n");
+        return sb.toString();
+    }
+
     private void postToolResultComment(String owner, String repo, Long issueNumber,
                                        ImplementationPlan.ToolRequest toolRequest,
-                                       ToolExecutionService.ToolResult result) {
+                                       ToolResult result) {
         try {
             StringBuilder comment = new StringBuilder();
             comment.append("🔧 **Tool Execution**: `").append(toolRequest.getTool());
@@ -487,17 +518,21 @@ public class IssueImplementationService {
     }
 
     private String buildMissingToolFeedback() {
-        String sb = "## Missing Validation Tool\n\n" +
-                "Your response included `fileChanges` but no `runTool` for validation.\n\n" +
-                "**Validation is mandatory.** Please provide the same file changes again, " +
-                "but this time include a `runTool` to validate the code.\n\n" +
-                "Detect the build system from the file tree and request the appropriate tool:\n" +
-                "- Maven: `{\"tool\": \"mvn\", \"args\": [\"compile\", \"-q\", \"-B\"]}`\n" +
-                "- Gradle: `{\"tool\": \"gradle\", \"args\": [\"compileJava\", \"-q\"]}`\n" +
-                "- npm: `{\"tool\": \"npm\", \"args\": [\"run\", \"build\"]}`\n" +
-                "- etc.\n\n" +
-                "Output JSON with both `fileChanges` and `runTool`.";
-        return sb;
+        return """
+                ## Missing Validation Tool
+                
+                Your response included `fileChanges` but no `runTool` for validation.
+                
+                **Validation is mandatory.** Please provide the same file changes again, \
+                but this time include a `runTool` to validate the code.
+                
+                Detect the build system from the file tree and request the appropriate tool:
+                - Maven: `{"tool": "mvn", "args": ["compile", "-q", "-B"]}`
+                - Gradle: `{"tool": "gradle", "args": ["compileJava", "-q"]}`
+                - npm: `{"tool": "npm", "args": ["run", "build"]}`
+                - etc.
+                
+                Output JSON with both `fileChanges` and `runTool`.""";
     }
 
     /**
@@ -582,6 +617,7 @@ public class IssueImplementationService {
         ImplementationPlan currentPlan = plan;
         String currentAiResponse = lastAiResponse;
         List<AiMessage> conversationHistory = sessionService.toAiMessages(session);
+        List<String> failedDiffPaths = new ArrayList<>();
 
         try {
             while (currentPlan.hasToolRequest() && toolExecutions < maxToolExecutions) {
@@ -589,8 +625,8 @@ public class IssueImplementationService {
 
                 // Prepare workspace if not already done
                 if (workspaceDir == null) {
-                    ToolExecutionService.WorkspaceResult workspaceResult =
-                            toolExecutionService.prepareWorkspace(owner, repo, workingBranch, currentPlan.getFileChanges(), repositoryClient.getCloneUrl(), repositoryClient.getToken());
+                    WorkspaceResult workspaceResult =
+                            workspaceService.prepareWorkspace(owner, repo, workingBranch, currentPlan.getFileChanges(), repositoryClient.getCloneUrl(), repositoryClient.getToken());
                     if (!workspaceResult.success()) {
                         log.error("Failed to prepare workspace for validation: {}", workspaceResult.error());
                         repositoryClient.postComment(owner, repo, issueNumber,
@@ -598,18 +634,17 @@ public class IssueImplementationService {
                         return currentPlan; // Return plan without validation
                     }
                     workspaceDir = workspaceResult.workspacePath();
+                    if (workspaceResult.hasFailedDiffs()) {
+                        failedDiffPaths.addAll(workspaceResult.failedDiffs());
+                    }
                 } else {
                     // Update existing workspace with new file changes
                     for (FileChange change : currentPlan.getFileChanges()) {
-                        Path filePath = workspaceDir.resolve(change.getPath());
                         try {
-                            switch (change.getOperation()) {
-                                case CREATE, UPDATE -> {
-                                    java.nio.file.Files.createDirectories(filePath.getParent());
-                                    java.nio.file.Files.writeString(filePath, change.getContent());
-                                }
-                                case DELETE -> java.nio.file.Files.deleteIfExists(filePath);
-                            }
+                            workspaceService.applyFileChangeToWorkspace(workspaceDir, change);
+                        } catch (DiffApplyService.DiffApplyException e) {
+                            log.warn("Diff application failed for workspace file {}: {}", change.getPath(), e.getMessage());
+                            failedDiffPaths.add(change.getPath());
                         } catch (Exception e) {
                             log.warn("Failed to update workspace file {}: {}", change.getPath(), e.getMessage());
                         }
@@ -621,7 +656,7 @@ public class IssueImplementationService {
                 log.info("Executing validation tool (follow-up): {} {}", toolRequest.getTool(),
                         toolRequest.getArgs() != null ? String.join(" ", toolRequest.getArgs()) : "");
 
-                ToolExecutionService.ToolResult result = toolExecutionService.executeTool(
+                ToolResult result = toolExecutionService.executeTool(
                         workspaceDir, toolRequest.getTool(), toolRequest.getArgs());
 
                 // Post tool result as comment
@@ -636,7 +671,9 @@ public class IssueImplementationService {
                 // Tool failed - send feedback to AI for fixing
                 String toolFeedback = buildToolFeedback(toolRequest, result);
                 String previousChangesInfo = buildPreviousChangesInfo(currentPlan);
-                String feedbackMessage = toolFeedback + previousChangesInfo;
+                String diffFailureInfo = buildDiffFailureFeedback(failedDiffPaths);
+                String feedbackMessage = toolFeedback + previousChangesInfo + diffFailureInfo;
+                failedDiffPaths.clear();
 
                 sessionService.addMessage(session, "user", feedbackMessage);
 
@@ -671,7 +708,7 @@ public class IssueImplementationService {
         } finally {
             // Clean up workspace
             if (workspaceDir != null) {
-                toolExecutionService.cleanupWorkspace(workspaceDir);
+                workspaceService.cleanupWorkspace(workspaceDir);
             }
         }
     }
@@ -741,13 +778,18 @@ public class IssueImplementationService {
             // Parse AI response
             ImplementationPlan plan = parseAiResponse(aiResponse);
 
-            // Handle file requests - AI wants to see more files
-            if (plan != null && plan.hasFileRequests()) {
-                log.info("AI requesting {} additional files", plan.getRequestFiles().size());
+            // Handle file requests - AI wants to see more files (loop up to 3 rounds)
+            int maxFileRequestRounds = 3;
+            int fileRequestRounds = 0;
+            while (plan != null && plan.hasFileRequests() && fileRequestRounds < maxFileRequestRounds) {
+                fileRequestRounds++;
+                log.info("AI requesting {} additional files (round {}/{})",
+                        plan.getRequestFiles().size(), fileRequestRounds, maxFileRequestRounds);
                 String fileContext = fetchSpecificFiles(owner, repo, workingBranch, plan.getRequestFiles());
 
                 // Send files and ask AI to continue
-                String filesMessage = "Here are the requested files:\n" + fileContext + "\n\nPlease continue.";
+                String filesMessage = "Here are the requested files:\n" + fileContext +
+                        "\n\nPlease continue with the implementation. Output JSON per system prompt format.";
                 sessionService.addMessage(session, "user", filesMessage);
 
                 List<AiMessage> updatedHistory = sessionService.toAiMessages(session);
@@ -1248,133 +1290,6 @@ public class IssueImplementationService {
         return sb.toString();
     }
 
-    String fetchRelevantFileContents(String owner, String repo, String ref,
-                                             List<Map<String, Object>> tree,
-                                             String issueTitle, String issueBody) {
-        // Build a map of all file paths for quick lookup
-        Map<String, Boolean> allPaths = new java.util.HashMap<>();
-        for (Map<String, Object> entry : tree) {
-            String path = (String) entry.getOrDefault("path", "");
-            String type = (String) entry.getOrDefault("type", "blob");
-            if ("blob".equals(type)) {
-                allPaths.put(path, true);
-            }
-        }
-
-        // Pick source files mentioned in the issue or common configuration files
-        List<String> relevantPaths = new ArrayList<>();
-        java.util.Set<String> relevantPackages = new java.util.HashSet<>();
-        String issueLower = (issueTitle + " " + (issueBody != null ? issueBody : "")).toLowerCase();
-
-        for (Map<String, Object> entry : tree) {
-            String path = (String) entry.getOrDefault("path", "");
-            String type = (String) entry.getOrDefault("type", "blob");
-            if (!"blob".equals(type)) continue;
-
-            // Include files explicitly mentioned in the issue
-            if (issueLower.contains(path.toLowerCase())) {
-                relevantPaths.add(path);
-                // Track the package of mentioned Java files
-                if (path.endsWith(".java")) {
-                    String packagePath = getPackagePath(path);
-                    if (packagePath != null) {
-                        relevantPackages.add(packagePath);
-                    }
-                }
-                continue;
-            }
-
-            // Check if any part of the path is mentioned (e.g., "Task" matches "Task.java")
-            String fileName = path.substring(path.lastIndexOf('/') + 1);
-            String fileNameWithoutExt = fileName.contains(".")
-                    ? fileName.substring(0, fileName.lastIndexOf('.'))
-                    : fileName;
-            if (fileNameWithoutExt.length() > 3 && issueLower.contains(fileNameWithoutExt.toLowerCase())) {
-                relevantPaths.add(path);
-                if (path.endsWith(".java")) {
-                    String packagePath = getPackagePath(path);
-                    if (packagePath != null) {
-                        relevantPackages.add(packagePath);
-                    }
-                }
-                continue;
-            }
-
-            // Include key configuration files
-            if (path.endsWith("pom.xml") || path.endsWith("build.gradle")
-                    || path.equals("README.md") || path.endsWith("application.properties")) {
-                relevantPaths.add(path);
-            }
-        }
-
-        // Add sibling files from relevant packages (for context on existing code structure)
-        for (String packagePath : relevantPackages) {
-            for (String path : allPaths.keySet()) {
-                if (path.startsWith(packagePath) && path.endsWith(".java") && !relevantPaths.contains(path)) {
-                    relevantPaths.add(path);
-                }
-            }
-        }
-
-        // Also include common domain/model/entity files that might define base classes
-        for (String path : allPaths.keySet()) {
-            if (path.endsWith(".java") && !relevantPaths.contains(path)) {
-                String lower = path.toLowerCase();
-                // Include likely interface, base class, or configuration files
-                if (lower.contains("/domain/") || lower.contains("/model/") ||
-                    lower.contains("/entity/") || lower.contains("/config/") ||
-                    lower.contains("/dto/") || lower.contains("/repository/") ||
-                    lower.contains("/service/") || lower.contains("/controller/")) {
-                    // Check if file name matches something in the issue
-                    String fileName = path.substring(path.lastIndexOf('/') + 1);
-                    String baseName = fileName.replace(".java", "").toLowerCase();
-                    if (issueLower.contains(baseName)) {
-                        relevantPaths.add(path);
-                    }
-                }
-            }
-        }
-
-        // Limit to a reasonable number but higher than before
-        if (relevantPaths.size() > 30) {
-            relevantPaths = relevantPaths.subList(0, 30);
-        }
-
-        log.debug("Fetching {} relevant files for context: {}", relevantPaths.size(), relevantPaths);
-
-        StringBuilder sb = new StringBuilder();
-        int totalChars = 0;
-        for (String path : relevantPaths) {
-            if (totalChars > MAX_FILE_CONTENT_CHARS) {
-                sb.append("\n(File context truncated due to size limits)\n");
-                break;
-            }
-            try {
-                String content = repositoryClient.getFileContent(owner, repo, path, ref);
-                if (content != null && !content.isEmpty()) {
-                    sb.append("\n--- File: ").append(path).append(" ---\n");
-                    sb.append(content).append("\n");
-                    totalChars += content.length();
-                }
-            } catch (Exception e) {
-                log.debug("Could not fetch file content for {}: {}", path, e.getMessage());
-            }
-        }
-        return sb.toString();
-    }
-
-    /**
-     * Extracts the package path from a Java file path.
-     * E.g., "src/main/java/com/example/task/domain/Task.java" -> "src/main/java/com/example/task/domain/"
-     */
-    private String getPackagePath(String filePath) {
-        int lastSlash = filePath.lastIndexOf('/');
-        if (lastSlash > 0) {
-            return filePath.substring(0, lastSlash + 1);
-        }
-        return null;
-    }
-
 
     ImplementationPlan parseAiResponse(String aiResponse) {
         if (aiResponse == null || aiResponse.isBlank()) {
@@ -1390,6 +1305,9 @@ public class IssueImplementationService {
 
         // Try to repair truncated JSON if necessary
         jsonStr = repairTruncatedJson(jsonStr);
+
+        // Fix invalid JSON escape sequences (e.g. \<space> instead of \n)
+        jsonStr = sanitizeInvalidJsonEscapes(jsonStr);
 
         try {
             AiImplementationResponse response = objectMapper.readValue(jsonStr, AiImplementationResponse.class);
@@ -1547,6 +1465,22 @@ public class IssueImplementationService {
         }
 
         return json;
+    }
+
+    /**
+     * Sanitizes invalid JSON escape sequences in the raw JSON string.
+     * AI models sometimes produce invalid escapes like {@code \<space>} instead of {@code \n}.
+     * This replaces any {@code \X} where X is not a valid JSON escape character
+     * ({@code " \ / b f n r t u}) with {@code \\X} (escaped backslash + character).
+     */
+    String sanitizeInvalidJsonEscapes(String json) {
+        if (json == null || json.isEmpty()) {
+            return json;
+        }
+        // In regex: \\([^"\\\/bfnrtu]) matches a backslash followed by any char
+        // that is NOT a valid JSON escape character, and replaces it with
+        // a double-backslash (escaped literal backslash) followed by that char.
+        return json.replaceAll("\\\\([^\"\\\\bfnrtu/])", "\\\\\\\\$1");
     }
 
     /**

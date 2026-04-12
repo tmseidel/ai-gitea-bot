@@ -7,16 +7,21 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.remus.giteabot.agent.model.FileChange;
 import org.remus.giteabot.agent.model.ImplementationPlan;
+import org.remus.giteabot.agent.session.AgentSession;
 import org.remus.giteabot.agent.session.AgentSessionService;
 import org.remus.giteabot.agent.validation.ToolExecutionService;
+import org.remus.giteabot.agent.validation.WorkspaceService;
 import org.remus.giteabot.ai.AiClient;
+import org.remus.giteabot.ai.AiMessage;
 import org.remus.giteabot.config.AgentConfigProperties;
 import org.remus.giteabot.config.PromptService;
 import org.remus.giteabot.repository.RepositoryApiClient;
 import org.remus.giteabot.gitea.model.WebhookPayload;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
@@ -41,6 +46,9 @@ class IssueImplementationServiceTest {
     private ToolExecutionService toolExecutionService;
 
     @Mock
+    private WorkspaceService workspaceService;
+
+    @Mock
     private DiffApplyService diffApplyService;
 
     private AgentConfigProperties agentConfig;
@@ -54,7 +62,7 @@ class IssueImplementationServiceTest {
         agentConfig.setMaxFiles(10);
         agentConfig.setBranchPrefix("ai-agent/");
         service = new IssueImplementationService(repositoryClient, aiClient, promptService, agentConfig,
-                sessionService, toolExecutionService, diffApplyService);
+                sessionService, toolExecutionService, workspaceService, diffApplyService);
     }
 
     @Test
@@ -461,26 +469,102 @@ class IssueImplementationServiceTest {
     }
 
     @Test
-    void fetchRelevantFileContents_includesMentionedFiles() {
-        List<Map<String, Object>> tree = List.of(
-                Map.of("type", "blob", "path", "src/Main.java"),
-                Map.of("type", "blob", "path", "pom.xml"),
-                Map.of("type", "blob", "path", "README.md"),
-                Map.of("type", "blob", "path", "src/Other.java")
-        );
+    void handleIssueComment_multipleFileRequestRounds_fetchesAllRequestedFiles() {
+        WebhookPayload payload = createCommentPayload("Please also update the config");
 
-        when(repositoryClient.getFileContent("o", "r", "pom.xml", "main")).thenReturn("<pom/>");
-        when(repositoryClient.getFileContent("o", "r", "README.md", "main")).thenReturn("# Readme");
-        when(repositoryClient.getFileContent("o", "r", "src/Main.java", "main")).thenReturn("class Main {}");
+        AgentSession session = new AgentSession("testowner", "testrepo", 42L, "Add new feature X");
+        session.setBranchName("ai-agent/issue-42");
+        session.setPrNumber(1L);
+        session.setStatus(AgentSession.AgentSessionStatus.PR_CREATED);
 
-        String result = service.fetchRelevantFileContents("o", "r", "main", tree,
-                "Fix src/Main.java", "Update the main class");
+        when(sessionService.getSessionByIssue("testowner", "testrepo", 42L))
+                .thenReturn(Optional.of(session));
+        when(repositoryClient.getDefaultBranch("testowner", "testrepo")).thenReturn("main");
+        when(promptService.getSystemPrompt("agent")).thenReturn("You are an agent");
+        when(sessionService.toAiMessages(any())).thenReturn(
+                new ArrayList<>(List.of(AiMessage.builder().role("user").content("Please also update the config").build())));
 
-        assertThat(result).contains("src/Main.java");
-        assertThat(result).contains("pom.xml");
-        assertThat(result).contains("README.md");
-        // src/Other.java is not mentioned in the issue, not a config file
-        assertThat(result).doesNotContain("src/Other.java");
+        // First AI response: request files (round 1)
+        String firstResponse = """
+                ```json
+                {
+                  "summary": "Need to see config",
+                  "requestFiles": ["src/Config.java"]
+                }
+                ```
+                """;
+        // Second AI response: request more files (round 2)
+        String secondResponse = """
+                ```json
+                {
+                  "summary": "Need to see model too",
+                  "requestFiles": ["src/Model.java"]
+                }
+                ```
+                """;
+        // Third AI response: actual implementation
+        String thirdResponse = """
+                ```json
+                {
+                  "summary": "Updated config",
+                  "fileChanges": [
+                    {
+                      "path": "src/Config.java",
+                      "operation": "UPDATE",
+                      "content": "class Config { int x; }"
+                    }
+                  ]
+                }
+                ```
+                """;
+
+        when(aiClient.chat(anyList(), anyString(), anyString(), isNull(), anyInt()))
+                .thenReturn(firstResponse, secondResponse, thirdResponse);
+
+        when(repositoryClient.getFileContent("testowner", "testrepo", "src/Config.java", "ai-agent/issue-42"))
+                .thenReturn("class Config {}");
+        when(repositoryClient.getFileContent("testowner", "testrepo", "src/Model.java", "ai-agent/issue-42"))
+                .thenReturn("class Model {}");
+        when(repositoryClient.getFileSha("testowner", "testrepo", "src/Config.java", "ai-agent/issue-42"))
+                .thenReturn("abc123");
+
+        service.handleIssueComment(payload);
+
+        // Verify file contents were fetched for both rounds
+        verify(repositoryClient).getFileContent("testowner", "testrepo", "src/Config.java", "ai-agent/issue-42");
+        verify(repositoryClient).getFileContent("testowner", "testrepo", "src/Model.java", "ai-agent/issue-42");
+        // Verify AI was called 3 times (initial + 2 file request rounds)
+        verify(aiClient, times(3)).chat(anyList(), anyString(), anyString(), isNull(), anyInt());
+        // Verify file change was applied
+        verify(repositoryClient).createOrUpdateFile(eq("testowner"), eq("testrepo"), eq("src/Config.java"),
+                eq("class Config { int x; }"), anyString(), eq("ai-agent/issue-42"), eq("abc123"));
+    }
+
+    private WebhookPayload createCommentPayload(String commentBody) {
+        WebhookPayload payload = new WebhookPayload();
+        payload.setAction("created");
+
+        WebhookPayload.Comment comment = new WebhookPayload.Comment();
+        comment.setId(100L);
+        comment.setBody(commentBody);
+        payload.setComment(comment);
+
+        WebhookPayload.Issue issue = new WebhookPayload.Issue();
+        issue.setNumber(42L);
+        issue.setTitle("Add new feature X");
+        issue.setBody("Please implement feature X that does Y and Z");
+        payload.setIssue(issue);
+
+        WebhookPayload.Owner owner = new WebhookPayload.Owner();
+        owner.setLogin("testowner");
+
+        WebhookPayload.Repository repository = new WebhookPayload.Repository();
+        repository.setName("testrepo");
+        repository.setFullName("testowner/testrepo");
+        repository.setOwner(owner);
+        payload.setRepository(repository);
+
+        return payload;
     }
 
     private WebhookPayload createIssuePayload() {
@@ -561,5 +645,73 @@ class IssueImplementationServiceTest {
     void extractNonJsonResponse_plainText_returnsText() {
         String response = "I can't implement this because the issue is too vague.";
         assertThat(service.extractNonJsonResponse(response)).isEqualTo(response);
+    }
+
+    // --- sanitizeInvalidJsonEscapes tests ---
+
+    @Test
+    void sanitizeInvalidJsonEscapes_nullInput_returnsNull() {
+        assertThat(service.sanitizeInvalidJsonEscapes(null)).isNull();
+    }
+
+    @Test
+    void sanitizeInvalidJsonEscapes_emptyInput_returnsEmpty() {
+        assertThat(service.sanitizeInvalidJsonEscapes("")).isEmpty();
+    }
+
+    @Test
+    void sanitizeInvalidJsonEscapes_validEscapes_unchanged() {
+        // All valid JSON escapes should remain untouched
+        String input = "{ \"diff\": \"line1\\nline2\\ttab\\\\backslash\\\"quote\\\\/slash\" }";
+        assertThat(service.sanitizeInvalidJsonEscapes(input)).isEqualTo(input);
+    }
+
+    @Test
+    void sanitizeInvalidJsonEscapes_backslashSpace_fixed() {
+        // \<space> is the exact error from the bug report
+        String input = "{ \"diff\": \"<<<<<<< SEARCH\\        model\" }";
+        String result = service.sanitizeInvalidJsonEscapes(input);
+        assertThat(result).isEqualTo("{ \"diff\": \"<<<<<<< SEARCH\\\\        model\" }");
+    }
+
+    @Test
+    void sanitizeInvalidJsonEscapes_multipleInvalidEscapes_allFixed() {
+        String input = "\"value\": \"\\a\\z\\1\"";
+        String result = service.sanitizeInvalidJsonEscapes(input);
+        assertThat(result).isEqualTo("\"value\": \"\\\\a\\\\z\\\\1\"");
+    }
+
+    @Test
+    void sanitizeInvalidJsonEscapes_mixedValidAndInvalid_onlyInvalidFixed() {
+        // \n is valid, \<space> is invalid
+        String input = "\"diff\": \"line1\\n\\        line2\"";
+        String result = service.sanitizeInvalidJsonEscapes(input);
+        assertThat(result).isEqualTo("\"diff\": \"line1\\n\\\\        line2\"");
+    }
+
+    @Test
+    void parseAiResponse_withInvalidEscapeSequence_stillParses() {
+        // Simulates the exact scenario from the bug: AI produces \<space> in a diff field
+        String aiResponse = """
+                ```json
+                {
+                  "summary": "Fix controller",
+                  "fileChanges": [
+                    {
+                      "path": "src/main/java/Controller.java",
+                      "operation": "UPDATE",
+                      "diff": "<<<<<<< SEARCH\\        model.addAttribute();\\n=======\\n            model.addAttribute();\\n>>>>>>> REPLACE"
+                    }
+                  ]
+                }
+                ```
+                """;
+
+        ImplementationPlan plan = service.parseAiResponse(aiResponse);
+
+        assertThat(plan).isNotNull();
+        assertThat(plan.getSummary()).isEqualTo("Fix controller");
+        assertThat(plan.getFileChanges()).hasSize(1);
+        assertThat(plan.getFileChanges().getFirst().getDiff()).contains("model.addAttribute()");
     }
 }

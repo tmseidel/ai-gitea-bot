@@ -5,6 +5,7 @@ import org.remus.giteabot.agent.DiffApplyService;
 import org.remus.giteabot.agent.IssueImplementationService;
 import org.remus.giteabot.agent.session.AgentSessionService;
 import org.remus.giteabot.agent.validation.ToolExecutionService;
+import org.remus.giteabot.agent.validation.WorkspaceService;
 import org.remus.giteabot.ai.AiClient;
 import org.remus.giteabot.config.AgentConfigProperties;
 import org.remus.giteabot.config.PromptService;
@@ -40,6 +41,7 @@ public class BotWebhookService {
     private final ReviewConfigProperties reviewConfig;
     private final AgentSessionService agentSessionService;
     private final ToolExecutionService toolExecutionService;
+    private final WorkspaceService workspaceService;
     private final DiffApplyService diffApplyService;
     private final BotService botService;
 
@@ -51,6 +53,7 @@ public class BotWebhookService {
                              ReviewConfigProperties reviewConfig,
                              AgentSessionService agentSessionService,
                              ToolExecutionService toolExecutionService,
+                             WorkspaceService workspaceService,
                              DiffApplyService diffApplyService,
                              BotService botService) {
         this.aiClientFactory = aiClientFactory;
@@ -61,6 +64,7 @@ public class BotWebhookService {
         this.reviewConfig = reviewConfig;
         this.agentSessionService = agentSessionService;
         this.toolExecutionService = toolExecutionService;
+        this.workspaceService = workspaceService;
         this.diffApplyService = diffApplyService;
         this.botService = botService;
     }
@@ -211,6 +215,6 @@ public class BotWebhookService {
         AiClient aiClient = aiClientFactory.getClient(bot.getAiIntegration());
         RepositoryApiClient repoClient = giteaClientFactory.getApiClient(bot.getGitIntegration());
         return new IssueImplementationService(repoClient, aiClient, promptService, agentConfig,
-                agentSessionService, toolExecutionService, diffApplyService);
+                agentSessionService, toolExecutionService, workspaceService, diffApplyService);
     }
 }
