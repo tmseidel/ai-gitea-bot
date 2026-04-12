@@ -10,6 +10,7 @@ import org.remus.giteabot.agent.session.AgentSessionService;
 import org.remus.giteabot.agent.validation.ToolExecutionService;
 import org.remus.giteabot.config.AgentConfigProperties;
 import org.remus.giteabot.config.PromptService;
+import org.remus.giteabot.config.ReviewConfigProperties;
 import org.remus.giteabot.gitea.model.WebhookPayload;
 import org.remus.giteabot.session.SessionService;
 
@@ -50,8 +51,8 @@ class BotWebhookServiceTest {
     @BeforeEach
     void setUp() {
         botWebhookService = new BotWebhookService(aiClientFactory, giteaClientFactory,
-                promptService, sessionService, agentConfig, agentSessionService,
-                toolExecutionService, diffApplyService, botService);
+                promptService, sessionService, agentConfig, new ReviewConfigProperties(),
+                agentSessionService, toolExecutionService, diffApplyService, botService);
     }
 
     @Test

@@ -8,6 +8,7 @@ import org.remus.giteabot.agent.validation.ToolExecutionService;
 import org.remus.giteabot.ai.AiClient;
 import org.remus.giteabot.config.AgentConfigProperties;
 import org.remus.giteabot.config.PromptService;
+import org.remus.giteabot.config.ReviewConfigProperties;
 import org.remus.giteabot.gitea.model.WebhookPayload;
 import org.remus.giteabot.repository.RepositoryApiClient;
 import org.remus.giteabot.review.CodeReviewService;
@@ -36,6 +37,7 @@ public class BotWebhookService {
     private final PromptService promptService;
     private final SessionService sessionService;
     private final AgentConfigProperties agentConfig;
+    private final ReviewConfigProperties reviewConfig;
     private final AgentSessionService agentSessionService;
     private final ToolExecutionService toolExecutionService;
     private final DiffApplyService diffApplyService;
@@ -46,6 +48,7 @@ public class BotWebhookService {
                              PromptService promptService,
                              SessionService sessionService,
                              AgentConfigProperties agentConfig,
+                             ReviewConfigProperties reviewConfig,
                              AgentSessionService agentSessionService,
                              ToolExecutionService toolExecutionService,
                              DiffApplyService diffApplyService,
@@ -55,6 +58,7 @@ public class BotWebhookService {
         this.promptService = promptService;
         this.sessionService = sessionService;
         this.agentConfig = agentConfig;
+        this.reviewConfig = reviewConfig;
         this.agentSessionService = agentSessionService;
         this.toolExecutionService = toolExecutionService;
         this.diffApplyService = diffApplyService;
@@ -197,7 +201,7 @@ public class BotWebhookService {
     private CodeReviewService createCodeReviewService(Bot bot) {
         AiClient aiClient = aiClientFactory.getClient(bot.getAiIntegration());
         RepositoryApiClient repoClient = giteaClientFactory.getApiClient(bot.getGitIntegration());
-        return new CodeReviewService(repoClient, aiClient, promptService, sessionService, bot.getUsername());
+        return new CodeReviewService(repoClient, aiClient, promptService, sessionService, bot.getUsername(), reviewConfig);
     }
 
     /**

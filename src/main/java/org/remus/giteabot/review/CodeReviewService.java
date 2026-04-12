@@ -5,10 +5,12 @@ import org.jspecify.annotations.NonNull;
 import org.remus.giteabot.ai.AiClient;
 import org.remus.giteabot.ai.AiMessage;
 import org.remus.giteabot.config.PromptService;
+import org.remus.giteabot.config.ReviewConfigProperties;
 import org.remus.giteabot.gitea.model.WebhookPayload;
 import org.remus.giteabot.repository.RepositoryApiClient;
 import org.remus.giteabot.repository.model.Review;
 import org.remus.giteabot.repository.model.ReviewComment;
+import org.remus.giteabot.review.enrichment.PrContextEnricher;
 import org.remus.giteabot.session.ReviewSession;
 import org.remus.giteabot.session.SessionService;
 
@@ -33,13 +35,13 @@ public class CodeReviewService {
 
     public CodeReviewService(RepositoryApiClient repositoryClient, AiClient aiClient,
                              PromptService promptService, SessionService sessionService,
-                             String botUsername) {
+                             String botUsername, ReviewConfigProperties reviewConfig) {
         this.repositoryClient = repositoryClient;
         this.aiClient = aiClient;
         this.promptService = promptService;
         this.sessionService = sessionService;
         this.botUsername = botUsername;
-        this.contextEnricher = new PrContextEnricher(repositoryClient);
+        this.contextEnricher = new PrContextEnricher(repositoryClient, reviewConfig);
     }
 
     public void reviewPullRequest(WebhookPayload payload, String promptName) {
@@ -69,7 +71,14 @@ public class CodeReviewService {
             String review;
             if (session.getMessages().isEmpty()) {
                 // Initial review: use the chunked diff review with enriched context
+                log.debug("LLM request [reviewDiff] for PR #{}: systemPrompt length={}, prTitle='{}', prBody length={}, diff length={}, additionalContext length={}",
+                        prNumber, systemPrompt != null ? systemPrompt.length() : 0, prTitle,
+                        prBody != null ? prBody.length() : 0, diff.length(),
+                        additionalContext != null ? additionalContext.length() : 0);
                 review = aiClient.reviewDiff(prTitle, prBody, diff, systemPrompt, null, additionalContext);
+                log.debug("LLM response [reviewDiff] for PR #{}: length={}, preview='{}'",
+                        prNumber, review != null ? review.length() : 0,
+                        review != null ? review.substring(0, Math.min(review.length(), 500)) : "null");
 
                 // Store a summary user message and the review in the session
                 String userSummary = buildPrSummaryMessage(prTitle, prBody);
@@ -80,7 +89,13 @@ public class CodeReviewService {
                 String updateMessage = buildPrUpdateMessage(prTitle, diff);
                 List<AiMessage> history = sessionService.toAiMessages(session);
 
+                log.debug("LLM request [chat/update] for PR #{}: history size={}, updateMessage length={}, systemPrompt length={}",
+                        prNumber, history.size(), updateMessage.length(),
+                        systemPrompt != null ? systemPrompt.length() : 0);
                 review = aiClient.chat(history, updateMessage, systemPrompt, null);
+                log.debug("LLM response [chat/update] for PR #{}: length={}, preview='{}'",
+                        prNumber, review != null ? review.length() : 0,
+                        review != null ? review.substring(0, Math.min(review.length(), 500)) : "null");
 
                 sessionService.addMessage(session, "user", updateMessage);
                 sessionService.addMessage(session, "assistant", review);
@@ -131,7 +146,15 @@ public class CodeReviewService {
 
             // Send the comment as a new message in the conversation
             List<AiMessage> history = sessionService.toAiMessages(session);
+            log.debug("LLM request [chat/botCommand] for PR #{}: history size={}, commentBody length={}, systemPrompt length={}",
+                    prNumber, history.size(), commentBody.length(),
+                    systemPrompt != null ? systemPrompt.length() : 0);
+            log.debug("LLM request [chat/botCommand] user message: '{}'",
+                    commentBody.substring(0, Math.min(commentBody.length(), 500)));
             String response = aiClient.chat(history, commentBody, systemPrompt, null);
+            log.debug("LLM response [chat/botCommand] for PR #{}: length={}, preview='{}'",
+                    prNumber, response != null ? response.length() : 0,
+                    response != null ? response.substring(0, Math.min(response.length(), 500)) : "null");
 
             // Store messages in session
             sessionService.addMessage(session, "user", commentBody);
@@ -260,7 +283,15 @@ public class CodeReviewService {
 
         // Send to AI
         List<AiMessage> history = sessionService.toAiMessages(session);
+        log.debug("LLM request [chat/inline] for file '{}': history size={}, contextMessage length={}, systemPrompt length={}",
+                filePath, history.size(), contextMessage.length(),
+                systemPrompt != null ? systemPrompt.length() : 0);
+        log.debug("LLM request [chat/inline] user message: '{}'",
+                contextMessage.substring(0, Math.min(contextMessage.length(), 500)));
         String response = aiClient.chat(history, contextMessage, systemPrompt, modelOverride);
+        log.debug("LLM response [chat/inline] for file '{}': length={}, preview='{}'",
+                filePath, response != null ? response.length() : 0,
+                response != null ? response.substring(0, Math.min(response.length(), 500)) : "null");
 
         // Store in session
         sessionService.addMessage(session, "user", contextMessage);
