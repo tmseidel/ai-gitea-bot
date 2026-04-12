@@ -665,4 +665,72 @@ class IssueImplementationServiceTest {
         String response = "I can't implement this because the issue is too vague.";
         assertThat(service.extractNonJsonResponse(response)).isEqualTo(response);
     }
+
+    // --- sanitizeInvalidJsonEscapes tests ---
+
+    @Test
+    void sanitizeInvalidJsonEscapes_nullInput_returnsNull() {
+        assertThat(service.sanitizeInvalidJsonEscapes(null)).isNull();
+    }
+
+    @Test
+    void sanitizeInvalidJsonEscapes_emptyInput_returnsEmpty() {
+        assertThat(service.sanitizeInvalidJsonEscapes("")).isEmpty();
+    }
+
+    @Test
+    void sanitizeInvalidJsonEscapes_validEscapes_unchanged() {
+        // All valid JSON escapes should remain untouched
+        String input = "{ \"diff\": \"line1\\nline2\\ttab\\\\backslash\\\"quote\\\\/slash\" }";
+        assertThat(service.sanitizeInvalidJsonEscapes(input)).isEqualTo(input);
+    }
+
+    @Test
+    void sanitizeInvalidJsonEscapes_backslashSpace_fixed() {
+        // \<space> is the exact error from the bug report
+        String input = "{ \"diff\": \"<<<<<<< SEARCH\\        model\" }";
+        String result = service.sanitizeInvalidJsonEscapes(input);
+        assertThat(result).isEqualTo("{ \"diff\": \"<<<<<<< SEARCH\\\\        model\" }");
+    }
+
+    @Test
+    void sanitizeInvalidJsonEscapes_multipleInvalidEscapes_allFixed() {
+        String input = "\"value\": \"\\a\\z\\1\"";
+        String result = service.sanitizeInvalidJsonEscapes(input);
+        assertThat(result).isEqualTo("\"value\": \"\\\\a\\\\z\\\\1\"");
+    }
+
+    @Test
+    void sanitizeInvalidJsonEscapes_mixedValidAndInvalid_onlyInvalidFixed() {
+        // \n is valid, \<space> is invalid
+        String input = "\"diff\": \"line1\\n\\        line2\"";
+        String result = service.sanitizeInvalidJsonEscapes(input);
+        assertThat(result).isEqualTo("\"diff\": \"line1\\n\\\\        line2\"");
+    }
+
+    @Test
+    void parseAiResponse_withInvalidEscapeSequence_stillParses() {
+        // Simulates the exact scenario from the bug: AI produces \<space> in a diff field
+        String aiResponse = """
+                ```json
+                {
+                  "summary": "Fix controller",
+                  "fileChanges": [
+                    {
+                      "path": "src/main/java/Controller.java",
+                      "operation": "UPDATE",
+                      "diff": "<<<<<<< SEARCH\\        model.addAttribute();\\n=======\\n            model.addAttribute();\\n>>>>>>> REPLACE"
+                    }
+                  ]
+                }
+                ```
+                """;
+
+        ImplementationPlan plan = service.parseAiResponse(aiResponse);
+
+        assertThat(plan).isNotNull();
+        assertThat(plan.getSummary()).isEqualTo("Fix controller");
+        assertThat(plan.getFileChanges()).hasSize(1);
+        assertThat(plan.getFileChanges().getFirst().getDiff()).contains("model.addAttribute()");
+    }
 }

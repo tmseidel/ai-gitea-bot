@@ -1396,6 +1396,9 @@ public class IssueImplementationService {
         // Try to repair truncated JSON if necessary
         jsonStr = repairTruncatedJson(jsonStr);
 
+        // Fix invalid JSON escape sequences (e.g. \<space> instead of \n)
+        jsonStr = sanitizeInvalidJsonEscapes(jsonStr);
+
         try {
             AiImplementationResponse response = objectMapper.readValue(jsonStr, AiImplementationResponse.class);
             if (response == null) {
@@ -1552,6 +1555,22 @@ public class IssueImplementationService {
         }
 
         return json;
+    }
+
+    /**
+     * Sanitizes invalid JSON escape sequences in the raw JSON string.
+     * AI models sometimes produce invalid escapes like {@code \<space>} instead of {@code \n}.
+     * This replaces any {@code \X} where X is not a valid JSON escape character
+     * ({@code " \ / b f n r t u}) with {@code \\X} (escaped backslash + character).
+     */
+    String sanitizeInvalidJsonEscapes(String json) {
+        if (json == null || json.isEmpty()) {
+            return json;
+        }
+        // In regex: \\([^"\\\/bfnrtu]) matches a backslash followed by any char
+        // that is NOT a valid JSON escape character, and replaces it with
+        // a double-backslash (escaped literal backslash) followed by that char.
+        return json.replaceAll("\\\\([^\"\\\\bfnrtu/])", "\\\\\\\\$1");
     }
 
     /**
