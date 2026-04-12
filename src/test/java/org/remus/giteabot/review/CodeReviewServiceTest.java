@@ -8,6 +8,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.remus.giteabot.ai.AiClient;
 import org.remus.giteabot.ai.AiMessage;
 import org.remus.giteabot.config.PromptService;
+import org.remus.giteabot.config.ReviewConfigProperties;
 import org.remus.giteabot.repository.RepositoryApiClient;
 import org.remus.giteabot.gitea.model.GiteaReview;
 import org.remus.giteabot.gitea.model.GiteaReviewComment;
@@ -55,7 +56,7 @@ class CodeReviewServiceTest {
     @BeforeEach
     void setUp() {
         codeReviewService = new CodeReviewService(repositoryClient, aiClient,
-                promptService, sessionService, "ai_bot");
+                promptService, sessionService, "ai_bot", new ReviewConfigProperties());
     }
 
     @Test
@@ -69,7 +70,7 @@ class CodeReviewServiceTest {
         when(repositoryClient.getPullRequestDiff("testowner", "testrepo", 1L))
                 .thenReturn("diff --git a/file.txt b/file.txt\n+new line");
         when(aiClient.reviewDiff(eq("Test PR"), eq("Test body"), anyString(),
-                eq("test system prompt"), isNull()))
+                eq("test system prompt"), isNull(), anyString()))
                 .thenReturn("Looks good!");
 
         codeReviewService.reviewPullRequest(payload, null);
@@ -90,6 +91,7 @@ class CodeReviewServiceTest {
         codeReviewService.reviewPullRequest(payload, null);
 
         verify(aiClient, never()).reviewDiff(anyString(), anyString(), anyString(), anyString(), anyString());
+        verify(aiClient, never()).reviewDiff(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
         verify(repositoryClient, never()).postReviewComment(anyString(), anyString(), anyLong(), anyString());
     }
 
@@ -104,7 +106,7 @@ class CodeReviewServiceTest {
         when(repositoryClient.getPullRequestDiff("testowner", "testrepo", 1L))
                 .thenReturn("diff --git a/file.txt b/file.txt\n+new line");
         when(aiClient.reviewDiff(eq("Test PR"), eq("Test body"), anyString(),
-                eq("You are a security reviewer."), isNull()))
+                eq("You are a security reviewer."), isNull(), anyString()))
                 .thenReturn("Security looks good!");
 
         codeReviewService.reviewPullRequest(payload, "security");
@@ -136,6 +138,7 @@ class CodeReviewServiceTest {
 
         verify(aiClient).chat(anyList(), anyString(), eq("test prompt"), isNull());
         verify(aiClient, never()).reviewDiff(anyString(), anyString(), anyString(), anyString(), anyString());
+        verify(aiClient, never()).reviewDiff(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
     }
 
     @Test
@@ -296,7 +299,7 @@ class CodeReviewServiceTest {
         review.setId(10L);
         review.setState("COMMENT");
         when(repositoryClient.getReviews("testowner", "testrepo", 2L))
-                .thenReturn(List.<Review>of(review));
+                .thenReturn(List.of(review));
 
         // Set up review comments - one with bot mention, one without
         GiteaReviewComment botComment = new GiteaReviewComment();
@@ -313,7 +316,7 @@ class CodeReviewServiceTest {
         normalComment.setLine(5);
 
         when(repositoryClient.getReviewComments("testowner", "testrepo", 2L, 10L))
-                .thenReturn(List.<ReviewComment>of(botComment, normalComment));
+                .thenReturn(List.of(botComment, normalComment));
 
         when(aiClient.chat(anyList(), contains("src/main/java/Foo.java"), eq("test prompt"), isNull()))
                 .thenReturn("Here's the explanation");
@@ -352,13 +355,13 @@ class CodeReviewServiceTest {
         GiteaReview review = new GiteaReview();
         review.setId(10L);
         when(repositoryClient.getReviews("testowner", "testrepo", 2L))
-                .thenReturn(List.<Review>of(review));
+                .thenReturn(List.of(review));
 
         GiteaReviewComment normalComment = new GiteaReviewComment();
         normalComment.setId(101L);
         normalComment.setBody("just a regular comment");
         when(repositoryClient.getReviewComments("testowner", "testrepo", 2L, 10L))
-                .thenReturn(List.<ReviewComment>of(normalComment));
+                .thenReturn(List.of(normalComment));
 
         codeReviewService.handleReviewSubmitted(payload, null);
 
@@ -374,7 +377,7 @@ class CodeReviewServiceTest {
         GiteaReview review = new GiteaReview();
         review.setId(10L);
         when(repositoryClient.getReviews("testowner", "testrepo", 2L))
-                .thenReturn(List.<Review>of(review));
+                .thenReturn(List.of(review));
 
         // Bot's own comment that mentions itself (e.g. from its formatted response)
         GiteaReviewComment botOwnComment = new GiteaReviewComment();
@@ -387,7 +390,7 @@ class CodeReviewServiceTest {
         botOwnComment.setUser(botUser);
 
         when(repositoryClient.getReviewComments("testowner", "testrepo", 2L, 10L))
-                .thenReturn(List.<ReviewComment>of(botOwnComment));
+                .thenReturn(List.of(botOwnComment));
 
         codeReviewService.handleReviewSubmitted(payload, null);
 
@@ -404,6 +407,9 @@ class CodeReviewServiceTest {
         pr.setNumber(1L);
         pr.setTitle("Test PR");
         pr.setBody("Test body");
+        WebhookPayload.Head head = new WebhookPayload.Head();
+        head.setRef("feature-branch");
+        pr.setHead(head);
         payload.setPullRequest(pr);
 
         WebhookPayload.Owner owner = new WebhookPayload.Owner();
@@ -466,6 +472,9 @@ class CodeReviewServiceTest {
         pr.setNumber(2L);
         pr.setTitle("Test PR");
         pr.setBody("Test body");
+        WebhookPayload.Head head = new WebhookPayload.Head();
+        head.setRef("feature-branch");
+        pr.setHead(head);
         payload.setPullRequest(pr);
 
         WebhookPayload.Review review = new WebhookPayload.Review();
