@@ -173,6 +173,34 @@ public class BitbucketApiClient implements RepositoryApiClient {
         return comments != null ? List.copyOf(comments) : List.of();
     }
 
+    // ---- PR context enrichment ----
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public List<Map<String, Object>> getPullRequestCommits(String owner, String repo, Long pullNumber) {
+        log.info("Fetching commits for PR #{} in {}/{}", pullNumber, owner, repo);
+        Map<String, Object> result = restClient.get()
+                .uri("/repositories/{workspace}/{repo}/pullrequests/{pr_id}/commits",
+                        owner, repo, pullNumber)
+                .retrieve()
+                .body(new ParameterizedTypeReference<>() {});
+        if (result != null && result.containsKey("values")) {
+            return (List<Map<String, Object>>) result.get("values");
+        }
+        return List.of();
+    }
+
+    @Override
+    public Map<String, Object> getIssueDetails(String owner, String repo, Long issueNumber) {
+        log.info("Fetching issue #{} in {}/{}", issueNumber, owner, repo);
+        Map<String, Object> issue = restClient.get()
+                .uri("/repositories/{workspace}/{repo}/issues/{issue_id}",
+                        owner, repo, issueNumber)
+                .retrieve()
+                .body(new ParameterizedTypeReference<>() {});
+        return issue != null ? issue : Map.of();
+    }
+
     // ---- Repository operations ----
 
     @Override

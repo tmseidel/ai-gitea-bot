@@ -29,6 +29,7 @@ public class CodeReviewService {
     private final PromptService promptService;
     private final SessionService sessionService;
     private final String botUsername;
+    private final PrContextEnricher contextEnricher;
 
     public CodeReviewService(RepositoryApiClient repositoryClient, AiClient aiClient,
                              PromptService promptService, SessionService sessionService,
@@ -38,6 +39,7 @@ public class CodeReviewService {
         this.promptService = promptService;
         this.sessionService = sessionService;
         this.botUsername = botUsername;
+        this.contextEnricher = new PrContextEnricher(repositoryClient);
     }
 
     public void reviewPullRequest(WebhookPayload payload, String promptName) {
@@ -58,12 +60,16 @@ public class CodeReviewService {
 
             String systemPrompt = promptService.getSystemPrompt(promptName);
 
+            // Build enriched context for better review quality
+            String headRef = resolveHeadRef(payload);
+            String additionalContext = gatherAdditionalContext(owner, repo, prNumber, diff, headRef, prBody);
+
             ReviewSession session = sessionService.getOrCreateSession(owner, repo, prNumber, promptName);
 
             String review;
             if (session.getMessages().isEmpty()) {
-                // Initial review: use the chunked diff review for thoroughness
-                review = aiClient.reviewDiff(prTitle, prBody, diff, systemPrompt, null);
+                // Initial review: use the chunked diff review with enriched context
+                review = aiClient.reviewDiff(prTitle, prBody, diff, systemPrompt, null, additionalContext);
 
                 // Store a summary user message and the review in the session
                 String userSummary = buildPrSummaryMessage(prTitle, prBody);
@@ -117,7 +123,7 @@ public class CodeReviewService {
             // If session is empty, add context from the PR
             if (session.getMessages().isEmpty()) {
                 String diff = repositoryClient.getPullRequestDiff(owner, repo, prNumber);
-                var prContext = buildPrContextString(payload, diff);
+                var prContext = buildPrContextString(payload, diff, owner, repo, prNumber);
                 sessionService.addMessage(session, "user", prContext);
                 sessionService.addMessage(session, "assistant",
                         "I've reviewed the pull request context. How can I help you?");
@@ -145,7 +151,8 @@ public class CodeReviewService {
         }
     }
 
-    private static @NonNull String buildPrContextString(WebhookPayload payload, String diff) {
+    private @NonNull String buildPrContextString(WebhookPayload payload, String diff,
+                                                    String owner, String repo, Long prNumber) {
         String prContext = "This is a pull request. " +
                 "Title: " + payload.getIssue().getTitle() + "\n" +
                 "Description: " + (payload.getIssue().getBody() != null ? payload.getIssue().getBody() : "N/A");
@@ -155,6 +162,15 @@ public class CodeReviewService {
                     ? diff.substring(0, MAX_DIFF_CHARS_FOR_CONTEXT) + "\n...(truncated)" : diff;
             prContext += "\n\nDiff:\n```diff\n" + truncatedDiff + "\n```";
         }
+
+        // Add enriched context
+        String headRef = resolveHeadRef(payload);
+        String prBody = payload.getIssue() != null ? payload.getIssue().getBody() : null;
+        String enrichedContext = gatherAdditionalContext(owner, repo, prNumber, diff, headRef, prBody);
+        if (!enrichedContext.isEmpty()) {
+            prContext += "\n\n" + enrichedContext;
+        }
+
         return prContext;
     }
 
@@ -201,6 +217,14 @@ public class CodeReviewService {
                             ? diff.substring(0, MAX_DIFF_CHARS_FOR_CONTEXT) + "\n...(truncated)" : diff;
                     prContext += "\n\nDiff:\n```diff\n" + truncatedDiff + "\n```";
                 }
+
+                // Add enriched context
+                String headRef = resolveHeadRef(payload);
+                String enrichedContext = gatherAdditionalContext(owner, repo, prNumber, diff, headRef, prBody);
+                if (!enrichedContext.isEmpty()) {
+                    prContext += "\n\n" + enrichedContext;
+                }
+
                 sessionService.addMessage(session, "user", prContext);
                 sessionService.addMessage(session, "assistant",
                         "I've reviewed the pull request context. How can I help you?");
@@ -320,6 +344,14 @@ public class CodeReviewService {
                             ? diff.substring(0, MAX_DIFF_CHARS_FOR_CONTEXT) + "\n...(truncated)" : diff;
                     prContext += "\n\nDiff:\n```diff\n" + truncatedDiff + "\n```";
                 }
+
+                // Add enriched context
+                String headRef = resolveHeadRef(payload);
+                String enrichedContext = gatherAdditionalContext(owner, repo, prNumber, diff, headRef, prBody);
+                if (!enrichedContext.isEmpty()) {
+                    prContext += "\n\n" + enrichedContext;
+                }
+
                 sessionService.addMessage(session, "user", prContext);
                 sessionService.addMessage(session, "assistant",
                         "I've reviewed the pull request context. How can I help you?");
@@ -447,5 +479,40 @@ public class CodeReviewService {
         }
         return comment.getUserLogin() != null
                 && botUsername.equalsIgnoreCase(comment.getUserLogin());
+    }
+
+    /**
+     * Resolves the head branch ref from the webhook payload.
+     * Tries PullRequest.head.ref first, then falls back to the default branch.
+     */
+    String resolveHeadRef(WebhookPayload payload) {
+        if (payload.getPullRequest() != null && payload.getPullRequest().getHead() != null
+                && payload.getPullRequest().getHead().getRef() != null) {
+            return payload.getPullRequest().getHead().getRef();
+        }
+        // Fallback: try to get the default branch
+        try {
+            String owner = payload.getRepository().getOwner().getLogin();
+            String repo = payload.getRepository().getName();
+            return repositoryClient.getDefaultBranch(owner, repo);
+        } catch (Exception e) {
+            log.debug("Could not resolve head ref, falling back to 'main': {}", e.getMessage());
+            return "main";
+        }
+    }
+
+    /**
+     * Gathers additional context for a PR review using the PrContextEnricher.
+     * Returns an empty string if context gathering fails.
+     */
+    String gatherAdditionalContext(String owner, String repo, Long prNumber,
+                                           String diff, String headRef, String prBody) {
+        try {
+            return contextEnricher.buildEnrichedContext(owner, repo, prNumber, diff, headRef, prBody);
+        } catch (Exception e) {
+            log.warn("Failed to gather additional context for PR #{} in {}/{}: {}",
+                    prNumber, owner, repo, e.getMessage());
+            return "";
+        }
     }
 }

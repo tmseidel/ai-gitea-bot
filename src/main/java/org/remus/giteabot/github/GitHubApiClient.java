@@ -124,6 +124,29 @@ public class GitHubApiClient implements RepositoryApiClient {
         return comments != null ? List.copyOf(comments) : List.of();
     }
 
+    // ---- PR context enrichment ----
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public List<Map<String, Object>> getPullRequestCommits(String owner, String repo, Long pullNumber) {
+        log.info("Fetching commits for PR #{} in {}/{}", pullNumber, owner, repo);
+        List<Map<String, Object>> commits = restClient.get()
+                .uri("/repos/{owner}/{repo}/pulls/{pull_number}/commits", owner, repo, pullNumber)
+                .retrieve()
+                .body(new ParameterizedTypeReference<>() {});
+        return commits != null ? commits : List.of();
+    }
+
+    @Override
+    public Map<String, Object> getIssueDetails(String owner, String repo, Long issueNumber) {
+        log.info("Fetching issue #{} in {}/{}", issueNumber, owner, repo);
+        Map<String, Object> issue = restClient.get()
+                .uri("/repos/{owner}/{repo}/issues/{issue_number}", owner, repo, issueNumber)
+                .retrieve()
+                .body(new ParameterizedTypeReference<>() {});
+        return issue != null ? issue : Map.of();
+    }
+
     // ---- Repository operations ----
 
     @Override

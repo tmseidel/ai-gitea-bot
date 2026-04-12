@@ -69,7 +69,7 @@ class CodeReviewServiceTest {
         when(repositoryClient.getPullRequestDiff("testowner", "testrepo", 1L))
                 .thenReturn("diff --git a/file.txt b/file.txt\n+new line");
         when(aiClient.reviewDiff(eq("Test PR"), eq("Test body"), anyString(),
-                eq("test system prompt"), isNull()))
+                eq("test system prompt"), isNull(), anyString()))
                 .thenReturn("Looks good!");
 
         codeReviewService.reviewPullRequest(payload, null);
@@ -90,6 +90,7 @@ class CodeReviewServiceTest {
         codeReviewService.reviewPullRequest(payload, null);
 
         verify(aiClient, never()).reviewDiff(anyString(), anyString(), anyString(), anyString(), anyString());
+        verify(aiClient, never()).reviewDiff(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
         verify(repositoryClient, never()).postReviewComment(anyString(), anyString(), anyLong(), anyString());
     }
 
@@ -104,7 +105,7 @@ class CodeReviewServiceTest {
         when(repositoryClient.getPullRequestDiff("testowner", "testrepo", 1L))
                 .thenReturn("diff --git a/file.txt b/file.txt\n+new line");
         when(aiClient.reviewDiff(eq("Test PR"), eq("Test body"), anyString(),
-                eq("You are a security reviewer."), isNull()))
+                eq("You are a security reviewer."), isNull(), anyString()))
                 .thenReturn("Security looks good!");
 
         codeReviewService.reviewPullRequest(payload, "security");
@@ -136,6 +137,7 @@ class CodeReviewServiceTest {
 
         verify(aiClient).chat(anyList(), anyString(), eq("test prompt"), isNull());
         verify(aiClient, never()).reviewDiff(anyString(), anyString(), anyString(), anyString(), anyString());
+        verify(aiClient, never()).reviewDiff(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
     }
 
     @Test
@@ -404,6 +406,9 @@ class CodeReviewServiceTest {
         pr.setNumber(1L);
         pr.setTitle("Test PR");
         pr.setBody("Test body");
+        WebhookPayload.Head head = new WebhookPayload.Head();
+        head.setRef("feature-branch");
+        pr.setHead(head);
         payload.setPullRequest(pr);
 
         WebhookPayload.Owner owner = new WebhookPayload.Owner();
@@ -466,6 +471,9 @@ class CodeReviewServiceTest {
         pr.setNumber(2L);
         pr.setTitle("Test PR");
         pr.setBody("Test body");
+        WebhookPayload.Head head = new WebhookPayload.Head();
+        head.setRef("feature-branch");
+        pr.setHead(head);
         payload.setPullRequest(pr);
 
         WebhookPayload.Review review = new WebhookPayload.Review();

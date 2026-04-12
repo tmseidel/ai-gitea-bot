@@ -197,6 +197,32 @@ public class GitLabApiClient implements RepositoryApiClient {
         return List.of();
     }
 
+    // ---- PR context enrichment ----
+
+    @Override
+    public List<Map<String, Object>> getPullRequestCommits(String owner, String repo, Long pullNumber) {
+        log.info("Fetching commits for MR !{} in {}/{}", pullNumber, owner, repo);
+        String projectPath = encodeProjectPath(owner, repo);
+        List<Map<String, Object>> commits = gitlabRestClient.get()
+                .uri("/api/v4/projects/{projectPath}/merge_requests/{iid}/commits",
+                        projectPath, pullNumber)
+                .retrieve()
+                .body(new ParameterizedTypeReference<>() {});
+        return commits != null ? commits : List.of();
+    }
+
+    @Override
+    public Map<String, Object> getIssueDetails(String owner, String repo, Long issueNumber) {
+        log.info("Fetching issue #{} in {}/{}", issueNumber, owner, repo);
+        String projectPath = encodeProjectPath(owner, repo);
+        Map<String, Object> issue = gitlabRestClient.get()
+                .uri("/api/v4/projects/{projectPath}/issues/{issue_iid}",
+                        projectPath, issueNumber)
+                .retrieve()
+                .body(new ParameterizedTypeReference<>() {});
+        return issue != null ? issue : Map.of();
+    }
+
     // ---- Repository operations ----
 
     @Override
